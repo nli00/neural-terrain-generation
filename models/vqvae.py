@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class ResBlock(nn.module):
+class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ResBlock, self).__init__()
         self.in_channels = in_channels
@@ -36,7 +36,16 @@ class ResBlock(nn.module):
         x = self.relu(x)
         return x
 
-class Encoder(nn.module):
+class UpsampleLayer(nn.Module):
+    def __init__(self, channels):
+        super(UpsampleLayer, self).__init__()
+        self.conv = nn.Conv2d(channels, channels, kernel_size = 3, stride = 1, padding = 1)
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor = 2.0, mode = 'nearest')
+        return self.conv(x)
+
+class Encoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(Encoder, self).__init__()
 
@@ -55,8 +64,10 @@ class Encoder(nn.module):
         # So I could either have the ResBlock multiply the channels or I could have the downsample layer do it
         # I'm going with the latter because it should be less computationally expensive
         # But the former could potentially be more expressive as the second ResBlock would get to work at a deeper channel depth with the full resolution
+        
+        # Another thing to note is that I'm not really sure if the downsample layer goes before or after each residual block. I have it after.
         num_blocks = len(channel_multipliers)
-        for i in range(num_blocks - 1):
+        for i in range(num_blocks):
             in_channels = filters * channel_multipliers[i]
 
             for _ in range(num_res_blocks):
@@ -67,14 +78,14 @@ class Encoder(nn.module):
                 out_channels = filters * channel_multipliers[i + 1]
                 downsample_layer = nn.Conv2d(in_channels, out_channels, kernel_size = 3, stride = 2, padding = 2)
                 layers.append(downsample_layer)
-
+ 
         for _ in range(num_res_blocks):
             final_channels = filters * channel_multipliers[-1]
             layers.append(ResBlock(final_channels, final_channels))
 
         layers.append(nn.BatchNorm2D(final_channels))
         layers.append(nn.ReLu())
-        layers.append(nn.Conv2d(final_channels, latent_dim, kernel_size = 1, stride = 1, padding = 1))
+        layers.append(nn.Conv2d(final_channels, latent_dim, kernel_size = 1, stride = 1, padding = 1)) # Squish hidden dim back down to latent dim
 
         self.model = nn.Sequential(*layers)
 
@@ -111,3 +122,42 @@ class VectorQuantizer(nn.Module):
         z_q = z_q.permute(0, 3, 1, 2) # n x c x h x w
 
         return z_q, loss, codebook_indices
+    
+class Decoder(nn.Module):
+    def __init__(self):
+        # This will all go in a config file later
+        num_res_blocks = 2
+        data_channels = 1
+        filters = 128
+        channel_multipliers = [1, 1, 2, 2, 4]
+        latent_dim = 256
+        # ------
+
+        # This could totally be a 1x1 convolution to mirror the structure of the last convolution of the encoder, but I'm following what 
+        # maskGIT is doing here and starting with a 3x3
+        first_conv = nn.Conv2d(latent_dim, filters * channel_multipliers[-1], kernel_size = 3, stride = 1, padding = 1)
+        layers = [first_conv]
+
+        for _ in range(num_res_blocks):
+            initial_channels = filters * channel_multipliers[-1]
+            layers.append(ResBlock(initial_channels, initial_channels))
+
+        num_blocks = len(channel_multipliers)
+        for i in range(num_blocks - 1, reversed = True):
+            in_channels = filters * channel_multipliers[i]
+
+            for _ in range(num_res_blocks):
+                layers.append(ResBlock(in_channels, in_channels))
+
+            if i > 0:
+                # Halves the resolution and multiplies the channels according to the channel_multipliers
+                out_channels = filters * channel_multipliers[i - 1]
+                upsample_layer = UpsampleLayer(out_channels)
+                layers.append(upsample_layer)
+
+        final_channels = filters * channel_multipliers[0]
+        layers.append(nn.BatchNorm2D(final_channels))
+        layers.append(nn.ReLu())
+        layers.append(nn.Conv2d(final_channels, data_channels, kernel_size = 3, stride = 1, padding = 1)) # Squish back down to the channels of the image we are trying to produce
+
+        self.model = nn.Sequential(*layers)
