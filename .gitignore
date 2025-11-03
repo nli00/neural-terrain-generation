@@ -1,6 +1,19 @@
 # my stuff
-data/*
+# venv
 .mgve/*
+
+# checkpoints
+checkpoints/*
+*.pth
+*.pt
+
+# images
+data/*
+results/*
+*.png
+*.tif
+*.jpeg
+*.jpg
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
