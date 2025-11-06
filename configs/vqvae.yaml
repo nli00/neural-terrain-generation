@@ -1,0 +1,19 @@
+lr : .01
+batch_size : 64
+num_workers : 8
+num_epochs : 30
+# train_dataset : data/stl10/train_images
+train_dataset : data/stl10/small_data
+use_amp : False
+
+means : [0.4471, 0.4402, 0.4070]
+stds : [0.2553, 0.2515, 0.2665]
+
+num_res_blocks : 2
+input_channels : 3
+filters : 128 # num channels after first transform
+channel_multipliers : [1, 1, 2, 2, 4]
+latent_dim : 256
+
+codebook_size : 1024
+codebook_dim : 256

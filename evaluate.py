@@ -70,7 +70,7 @@ def main():
 
     dataloader = load_data(means = training_data_means, stds = training_data_stds)
 
-    imgs, reconstructions = evaluate(checkpoint_path = "checkpoints/vqvae_epoch_4.pt", 
+    imgs, reconstructions = evaluate(checkpoint_path = "checkpoints/vqvae/best_epoch_29.pt", 
                                      dataloader = dataloader)
 
     visualize(imgs, reconstructions, training_data_means, training_data_stds, "results")
