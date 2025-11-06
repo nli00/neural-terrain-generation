@@ -26,7 +26,7 @@ class VQVAETrainer:
         self.len_data = -1
         self.config = config
         self.writer = summary_writer
-
+        self.resolution = config['resolution']
         self.out_dir = out_dir
 
         self.lr = .01
@@ -52,7 +52,7 @@ class VQVAETrainer:
         training_data_stds = [0.2553, 0.2515, 0.2665]
 
         training_transforms = transforms.Compose(
-            [transforms.Resize((128, 128)),
+            [transforms.Resize((self.resolution, self.resolution)),
             transforms.ToTensor(),
             transforms.Normalize(mean=training_data_means, std=training_data_stds)]
         )
@@ -83,17 +83,9 @@ class VQVAETrainer:
             return True
         return False
     
-    def cleanup_checkpoints(self, last_epoch):
-        best_checkpoints = glob.glob(os.path.join(self.out_dir, "*best*.pt"))
-        latest_checkpoints = glob.glob(os.path.join(self.out_dir, "*latest*.pt")) 
-        try:    
-            latest_checkpoints.remove(os.path.join(self.out_dir, f"latest_epoch_{last_epoch}.pt"))
-        except Exception:
-            pass
-        best_checkpoints.sort()
-        best_checkpoints = best_checkpoints[:-1]
-        checkpoints_to_remove = best_checkpoints + latest_checkpoints
-        for checkpoint in checkpoints_to_remove:
+    def cleanup_checkpoints(self, type):
+        checkpoints = glob.glob(os.path.join(self.out_dir, f"*{type}*.pt"))
+        for checkpoint in checkpoints:
             os.remove(checkpoint)
     
     def train(self):
@@ -142,6 +134,7 @@ class VQVAETrainer:
                 epoch_vq_loss += vq_loss.item() * cur_batch_size
                 epoch_reg_loss += vq_regularization_loss.item() * cur_batch_size
                 epoch_recon_loss += recon_loss.item() * cur_batch_size
+                self.writer.flush()
 
             epoch_vq_loss /= self.len_data
             epoch_recon_loss /= self.len_data
@@ -154,10 +147,11 @@ class VQVAETrainer:
                 })
             
             if self.update_log(epoch_vq_loss, epoch_recon_loss, epoch_reg_loss, epoch):
+                self.cleanup_checkpoints('best')
                 torch.save(self.model.state_dict(), os.path.join(self.out_dir, f"best_epoch_{epoch}.pt"))
-            else:
-                torch.save(self.model.state_dict(), os.path.join(self.out_dir, f"latest_epoch_{epoch}.pt"))
-            self.cleanup_checkpoints(epoch)
+            self.cleanup_checkpoints('latest')
+            torch.save(self.model.state_dict(), os.path.join(self.out_dir, f"latest_epoch_{epoch}.pt"))
+            
             self.writer.flush()
 
 
