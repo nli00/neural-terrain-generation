@@ -60,16 +60,14 @@ class DownsampleLayer(nn.Module):
         return x
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, config):
         super(Encoder, self).__init__()
-
-        # This will all go in a config file later
-        num_res_blocks = 2
-        input_channels = 3
-        filters = 128
-        channel_multipliers = [1, 1, 2, 2, 4]
-        latent_dim = 256
-        # ------
+        
+        num_res_blocks = config['num_res_blocks']
+        input_channels = config['data_channels']
+        filters = config['filters']
+        channel_multipliers = config['channel_multipliers']
+        latent_dim = config['latent_dim']
 
         first_conv = nn.Conv2d(input_channels, filters, kernel_size = 3, stride = 1, padding = 1)
         layers = [first_conv]
@@ -142,15 +140,14 @@ class VectorQuantizer(nn.Module):
         return z_q, codebook_indices, loss
     
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, config):
         super(Decoder, self).__init__()
-        # This will all go in a config file later
-        num_res_blocks = 2
-        output_channels = 3
-        filters = 128
-        channel_multipliers = [1, 1, 2, 2, 4]
-        latent_dim = 256
-        # ------
+
+        num_res_blocks = config['num_res_blocks']
+        output_channels = config['data_channels']
+        filters = config['filters']
+        channel_multipliers = config['channel_multipliers']
+        latent_dim = config['latent_dim']
 
         # This could totally be a 1x1 convolution to mirror the structure of the last convolution of the encoder, but I'm following what 
         # maskGIT is doing here and starting with a 3x3
@@ -188,11 +185,11 @@ class Decoder(nn.Module):
         return self.model(x)
 
 class VQVAE(nn.Module):
-    def __init__(self):
+    def __init__(self, config):
         super(VQVAE, self).__init__()
-        self.encoder = Encoder()
-        self.vq_layer = VectorQuantizer(codebook_size = 1024, codebook_dim = 256)
-        self.decoder = Decoder()
+        self.encoder = Encoder(config)
+        self.vq_layer = VectorQuantizer(codebook_size = config['codebook_size'], codebook_dim = config['latent_dim'])
+        self.decoder = Decoder(config)
 
     
     def forward(self, batch):
@@ -203,4 +200,4 @@ class VQVAE(nn.Module):
         return decoded_images, codebook_indices, codebook_loss
     
     def load_checkpoints(self, path):
-        self.load_state_dict(torch.load(path))
+        self.load_state_dict(torch.load(path)['model_state_dict'])

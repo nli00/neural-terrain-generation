@@ -1,58 +1,52 @@
 import torch
-import torch.nn as nn
 from torch.amp import autocast, GradScaler
-from torch.utils.data import Dataset
 from torchvision import transforms
-import numpy as np
-from PIL import Image
+
 import os
 from tqdm import tqdm
 import argparse
-import yaml
-import glob
-from torch.utils.tensorboard import SummaryWriter
-import shutil
+import lpips
 
+import utils
 from dataset import STL10Dataset
 from models.vqvae import VQVAE
 
 class VQVAETrainer:
     def __init__(self, config, out_dir, summary_writer):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = VQVAE()
+        self.model = VQVAE(config)
         self.model.to(self.device)
-        self.reconstruction_loss_fn = nn.MSELoss()
-        self.num_epochs = config['num_epochs']
-        self.len_data = -1
+
+        # self.reconstruction_loss_fn = nn.MSELoss()
+        self.reconstruction_loss_fn = torch.nn.L1Loss(reduction='mean')
+
         self.config = config
-        self.writer = summary_writer
-        self.resolution = config['resolution']
+        self.num_epochs = config['num_epochs']
+        self.start_epoch = 0
         self.out_dir = out_dir
 
-        self.lr = .01
         self.opt = torch.optim.Adam(
             self.model.parameters(),
-            lr = self.lr
+            lr = self.config['lr']
         )
+
+        # self.perceptual_loss_fn = lpips.LPIPS(net = 'vgg').to(device = self.device)
 
         self.use_amp = config['use_amp']
         if self.use_amp:
             self.scaler = GradScaler()
-        
 
         os.makedirs("results", exist_ok = True)
         os.makedirs("checkpoints", exist_ok = True)
 
-        self.best_vq = float('inf')
-        self.best_recon = float('inf')
-        self.best_regularization = float('inf')
+        self.logger = utils.Logger(summary_writer, self.out_dir)
 
     def load_data(self):
-        training_data_means = [0.4471, 0.4402, 0.4070]
-        training_data_stds = [0.2553, 0.2515, 0.2665]
+        training_data_means = self.config['means']
+        training_data_stds = self.config['stds']
 
         training_transforms = transforms.Compose(
-            [transforms.Resize((self.resolution, self.resolution)),
+            [transforms.Resize((self.config['resolution'], self.config['resolution'])),
             transforms.ToTensor(),
             transforms.Normalize(mean=training_data_means, std=training_data_stds)]
         )
@@ -62,129 +56,106 @@ class VQVAETrainer:
 
         train_dataloader = torch.utils.data.DataLoader(
             train_dataset,
-            batch_size = 64,
+            batch_size = self.config['batch_size'],
             shuffle = True, 
-            num_workers = 8,
+            num_workers = self.config['num_workers'],
             pin_memory = True
         )
         return train_dataloader
     
-    def update_log(self, epoch, vq_loss, recon_loss, regularization_loss):
-        self.writer.add_scalar("vq_loss", vq_loss, epoch)
-        self.writer.add_scalar("recon_loss", recon_loss, epoch)
-        self.writer.add_scalar("regularization_loss", regularization_loss, epoch)
-
-        if recon_loss < self.best_recon:
-             self.best_recon = recon_loss
-        if regularization_loss < self.best_regularization:
-             self.best_regularization = regularization_loss
-        if vq_loss < self.best_vq:
-            self.best_vq = vq_loss
-            return True
-        return False
-    
-    def cleanup_checkpoints(self, type):
-        checkpoints = glob.glob(os.path.join(self.out_dir, f"*{type}*.pt"))
-        for checkpoint in checkpoints:
-            os.remove(checkpoint)
+    def load_checkpoint(self, checkpoint):
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.opt.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.start_epoch = checkpoint['epoch'] + 1
+        self.best_loss = checkpoint['best_loss']
     
     def train(self):
         train_dataloader = self.load_data()
-        for epoch in range(self.num_epochs):
+        for epoch in range(self.start_epoch, self.num_epochs):
             self.model.train()
 
             pbar = tqdm(train_dataloader, desc=f"Epoch {epoch} : {self.num_epochs}")
-            epoch_vq_loss = 0
-            epoch_reg_loss = 0
-            epoch_recon_loss = 0
+            losses = {'loss': 0,
+                      'recon_loss': 0,
+                      'reg_loss': 0}
+            steps_this_epoch = 0
+
+            utilized_codebook = set()
 
             for imgs in pbar:
                 imgs = imgs.to(self.device)
                 cur_batch_size = imgs.size(0)
+                steps_this_epoch += cur_batch_size
 
                 if self.use_amp:
                     with autocast(device_type=self.device):
                         decoded_images, _, vq_regularization_loss = self.model(imgs)
 
                         recon_loss = self.reconstruction_loss_fn(decoded_images, imgs)
-                        vq_loss = recon_loss + vq_regularization_loss
+                        loss = recon_loss + vq_regularization_loss
                     
                     self.opt.zero_grad()
-                    self.scaler.scale(vq_loss).backward()
+                    self.scaler.scale(loss).backward()
                     self.scaler.step(self.opt)
                     self.scaler.update()
                 else:
-                    decoded_images, _, vq_regularization_loss = self.model(imgs)
+                    decoded_images, codebook_indices, vq_regularization_loss = self.model(imgs)
+                    utilized_codebook.update(codebook_indices.tolist())
 
+                    # perceptual_loss = torch.mean(self.perceptual_loss_fn(decoded_images, imgs))
                     recon_loss = self.reconstruction_loss_fn(decoded_images, imgs)
-                    vq_loss = recon_loss + vq_regularization_loss
+                    # loss = 0.5 * recon_loss + 0.5 * perceptual_loss + vq_regularization_loss
+                    loss = recon_loss + vq_regularization_loss
                     
                     self.opt.zero_grad()
-                    vq_loss.backward()
+                    loss.backward()
                     self.opt.step()
 
                 # should save some images out around here
-
+                losses['loss'] += loss.item() * cur_batch_size
+                losses['recon_loss'] += recon_loss.item() * cur_batch_size
+                losses['reg_loss'] += vq_regularization_loss.item() * cur_batch_size
+                
                 pbar.set_postfix({
-                    'VQ_Loss' : f"{vq_loss.item():.5f}",
-                    'Recon_Loss' : f"{recon_loss.item():.5f}",
-                    'VQ_Reg_Loss' : f"{vq_regularization_loss.item():.5f}"
+                    'Loss' : f"{losses['loss'] / steps_this_epoch:.5f}",
+                    'Recon_Loss' : f"{losses['recon_loss'] / steps_this_epoch:.5f}",
+                    'VQ_Reg_Loss' : f"{losses['reg_loss'] / steps_this_epoch:.5f}"
                 })
 
-                epoch_vq_loss += vq_loss.item() * cur_batch_size
-                epoch_reg_loss += vq_regularization_loss.item() * cur_batch_size
-                epoch_recon_loss += recon_loss.item() * cur_batch_size
-                self.writer.flush()
-
-            epoch_vq_loss /= self.len_data
-            epoch_recon_loss /= self.len_data
-            epoch_reg_loss /= self.len_data
-
-            pbar.set_postfix({
-                    'VQ_Loss' : f"{epoch_vq_loss:.5f}",
-                    'Recon_Loss' : f"{epoch_recon_loss:.5f}",
-                    'VQ_Reg_Loss' : f"{epoch_reg_loss:.5f}"
-                })
+            losses = {k : (v / self.len_data) for k, v in losses.items()}
+            print(f"Codebook utilization: {len(utilized_codebook) / self.config['codebook_size']}")
             
-            if self.update_log(epoch_vq_loss, epoch_recon_loss, epoch_reg_loss, epoch):
-                self.cleanup_checkpoints('best')
-                torch.save(self.model.state_dict(), os.path.join(self.out_dir, f"best_epoch_{epoch}.pt"))
-            self.cleanup_checkpoints('latest')
-            torch.save(self.model.state_dict(), os.path.join(self.out_dir, f"latest_epoch_{epoch}.pt"))
+            if self.logger.update_losses(losses, epoch):
+                torch.save({
+                    'epoch' : epoch,
+                    'best_loss' : self.logger.get_best_loss(),
+                    'model_state_dict' : self.model.state_dict(),
+                    'optimizer_state_dict' : self.opt.state_dict()
+                    }, os.path.join(self.out_dir, f"best_{epoch}.pt"))
+            torch.save({
+                    'epoch' : epoch,
+                    'best_loss' : self.logger.get_best_loss(),
+                    'model_state_dict' : self.model.state_dict(),
+                    'optimizer_state_dict' : self.opt.state_dict()
+                    }, os.path.join(self.out_dir, f"latest_{epoch}.pt"))
             
-            self.writer.flush()
+        self.logger.write_logs()
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type = str, help = "name of config file in configs/", required = True)
+    parser.add_argument("--load_checkpoint", action = 'store_true', required = False)
+    parser.add_argument("--save_as", type = str, default = None, required = False)
+    parser.add_argument("--verbose", action = 'store_true', required = False)
     args = parser.parse_args()
 
-    if not args.config.endswith(".yaml"):
-        config_file = args.config + ".yaml"
-
-    with open(os.path.join("configs", config_file)) as f:
-        config = yaml.safe_load(f)
-    
-    out_dir = os.path.join("checkpoints", args.config)
-
-    if os.path.exists(os.path.join("checkpoints", args.config)):
-        print(f"Contining will overwrite existing checkpoints in checkpoints/{args.config}.")
-        response = input("Type \"continue\" to continue.\n")
-        if response != "continue":
-            return
-        # else:
-        #     shutil.rmtree(os.path.join("checkpoints", args.config, 'logs'))
-    else:
-        os.mkdir(os.path.join("checkpoints", args.config))
-
-    writer = SummaryWriter(os.path.join("checkpoints", args.config, 'logs'))
-    
-    with open(os.path.join("checkpoints", args.config, "config.yaml"), 'w') as f:
-        yaml.dump(config, f)
+    config, out_dir, writer, checkpoint = utils.prepare_result_folder(args)
 
     try:
         trainer = VQVAETrainer(config, out_dir, writer)
+        if args.load_checkpoint:
+            trainer.load_checkpoint(checkpoint)
         trainer.train()
         writer.close()
     except KeyboardInterrupt:

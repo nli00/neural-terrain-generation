@@ -5,6 +5,8 @@ from torchvision import transforms
 
 from models.vqvae import VQVAE
 from dataset import STL10Dataset
+import argparse
+import yaml
 
 def load_data(means, stds):
 
@@ -19,18 +21,27 @@ def load_data(means, stds):
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size = 64,
-        shuffle = True, 
+        shuffle = False, 
         num_workers = 8,
         pin_memory=True
     )
     return train_dataloader
 
-def visualize(imgs, reconstructions, means, stds, out_path):
+def visualize(imgs, reconstructions, means, stds, out_path, config):
     means = torch.tensor(means, device = imgs.device).view(1, 3, 1, 1)
     stds = torch.tensor(stds, device = imgs.device).view(1, 3, 1, 1)
 
     if not os.path.exists(out_path):
         os.makedir(out_path)
+
+    dirs = os.listdir(out_path)
+    if len(dirs) == 0:
+        highest_index = 0
+    else:
+        highest_index = int(sorted(dirs)[-1].split('_')[-1])
+
+    out_path = os.path.join(out_path, f"test_{highest_index + 1}")
+    os.mkdir(out_path)
     
     comparison = torch.cat([imgs, reconstructions], dim=0)
     comparison = comparison * stds + means
@@ -42,13 +53,16 @@ def visualize(imgs, reconstructions, means, stds, out_path):
         pad_value=1.0
     )
 
+    with open(os.path.join(out_path, "config.yaml"), 'w') as f:
+        yaml.dump(config, f)
+
     save_image(
         grid, 
         fp = os.path.join(out_path, f"output.png")
     )
 
-def evaluate(checkpoint_path, dataloader):
-    model = VQVAE()
+def evaluate(checkpoint_path, dataloader, config):
+    model = VQVAE(config)
     device = 'cuda' if torch.cuda.is_available else 'cpu'
     model.to(device)
 
@@ -65,15 +79,23 @@ def evaluate(checkpoint_path, dataloader):
     return imgs, reconstruction
     
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint_dir", type = str, help = "path to directory with checkpoint", required = True)
+    parser.add_argument("--checkpoint", type = str, required = True)
+    args = parser.parse_args()
+
+    with open(os.path.join("checkpoints", args.checkpoint_dir, "config.yaml")) as f:
+        config = yaml.safe_load(f)
+
     training_data_means = [0.4471, 0.4402, 0.4070]
     training_data_stds = [0.2553, 0.2515, 0.2665]
 
     dataloader = load_data(means = training_data_means, stds = training_data_stds)
 
-    imgs, reconstructions = evaluate(checkpoint_path = "checkpoints/vqvae/latest_epoch_30.pt", 
-                                     dataloader = dataloader)
+    imgs, reconstructions = evaluate(checkpoint_path = os.path.join("checkpoints", args.checkpoint_dir, args.checkpoint), 
+                                     dataloader = dataloader, config = config)
 
-    visualize(imgs, reconstructions, training_data_means, training_data_stds, "results")
+    visualize(imgs, reconstructions, training_data_means, training_data_stds, "results", config)
 
 if __name__ == "__main__":
     main()
