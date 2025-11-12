@@ -123,7 +123,7 @@ class VQVAETrainer:
                 })
 
             losses = {k : (v / self.len_data) for k, v in losses.items()}
-            print(f"Codebook utilization: {len(utilized_codebook) / self.config['codebook_size']}")
+            print(f"Codebook utilization: {len(utilized_codebook) / self.config['vqae']['codebook_size']}")
             
             if self.logger.update_losses(losses, epoch):
                 torch.save({

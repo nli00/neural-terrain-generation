@@ -64,11 +64,11 @@ class Encoder(nn.Module):
     def __init__(self, config):
         super(Encoder, self).__init__()
         
-        num_res_blocks = config['num_res_blocks']
         input_channels = config['data_channels']
-        filters = config['filters']
-        channel_multipliers = config['channel_multipliers']
-        latent_dim = config['latent_dim']
+        num_res_blocks = config['vqvae']['num_res_blocks']
+        filters = config['vqvae']['filters']
+        channel_multipliers = config['vqvae']['channel_multipliers']
+        latent_dim = config['vqvae']['latent_dim']
 
         first_conv = nn.Conv2d(input_channels, filters, kernel_size = 3, stride = 1, padding = 1)
         layers = [first_conv]
@@ -144,11 +144,11 @@ class Decoder(nn.Module):
     def __init__(self, config):
         super(Decoder, self).__init__()
 
-        num_res_blocks = config['num_res_blocks']
         output_channels = config['data_channels']
-        filters = config['filters']
-        channel_multipliers = config['channel_multipliers']
-        latent_dim = config['latent_dim']
+        num_res_blocks = config['vqvae']['num_res_blocks']
+        filters = config['vqvae']['filters']
+        channel_multipliers = config['vqvae']['channel_multipliers']
+        latent_dim = config['vqvae']['latent_dim']
 
         # This could totally be a 1x1 convolution to mirror the structure of the last convolution of the encoder, but I'm following what 
         # maskGIT is doing here and starting with a 3x3
@@ -189,7 +189,7 @@ class VQVAE(nn.Module):
     def __init__(self, config):
         super(VQVAE, self).__init__()
         self.encoder = Encoder(config)
-        self.vq_layer = VectorQuantizer(codebook_size = config['codebook_size'], codebook_dim = config['latent_dim'])
+        self.vq_layer = VectorQuantizer(codebook_size = config['vqvae']['codebook_size'], codebook_dim = config['vqvae']['latent_dim'])
         self.decoder = Decoder(config)
 
     
