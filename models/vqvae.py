@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Now that I think about it, I really should just infer the in channels from the data shape. 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ResBlock, self).__init__()

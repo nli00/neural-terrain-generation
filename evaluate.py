@@ -87,15 +87,12 @@ def main():
     with open(os.path.join("checkpoints", args.checkpoint_dir, "config.yaml")) as f:
         config = yaml.safe_load(f)
 
-    training_data_means = [0.4471, 0.4402, 0.4070]
-    training_data_stds = [0.2553, 0.2515, 0.2665]
-
-    dataloader = load_data(means = training_data_means, stds = training_data_stds)
+    dataloader = load_data(means = config['means'], stds = config['stds'])
 
     imgs, reconstructions = evaluate(checkpoint_path = os.path.join("checkpoints", args.checkpoint_dir, args.checkpoint), 
                                      dataloader = dataloader, config = config)
 
-    visualize(imgs, reconstructions, training_data_means, training_data_stds, "results", config)
+    visualize(imgs, reconstructions, config['means'], config['stds'], "results", config)
 
 if __name__ == "__main__":
     main()
