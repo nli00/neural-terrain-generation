@@ -141,7 +141,6 @@ class VQVAETrainer:
             
         self.logger.write_logs()
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type = str, help = "name of config file in configs/", required = True)

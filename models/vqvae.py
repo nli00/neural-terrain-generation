@@ -192,13 +192,15 @@ class VQVAE(nn.Module):
         self.vq_layer = VectorQuantizer(codebook_size = config['vqvae']['codebook_size'], codebook_dim = config['vqvae']['latent_dim'])
         self.decoder = Decoder(config)
 
-    
+    def load_checkpoints(self, path):
+        self.load_state_dict(torch.load(path)['model_state_dict'])
+
+    def get_last_layer_weights(self):
+        return self.decoder.model[-1].weight
+
     def forward(self, batch):
         encoded_images = self.encoder(batch)
         quantized_vectors, codebook_indices, codebook_loss = self.vq_layer(encoded_images)
         decoded_images = self.decoder(quantized_vectors)
 
         return decoded_images, codebook_indices, codebook_loss
-    
-    def load_checkpoints(self, path):
-        self.load_state_dict(torch.load(path)['model_state_dict'])

@@ -11,6 +11,8 @@ means : [0.4471, 0.4402, 0.4070]
 stds : [0.2553, 0.2515, 0.2665]
 
 vqvae:
+  perceptual_weight : 1.0
+
   num_res_blocks : 2
   filters : 128 # num channels after first transform
   channel_multipliers : [1, 2, 4]
@@ -18,6 +20,7 @@ vqvae:
 
   codebook_size : 1024
   codebook_dim : 256
+  codebook_weight : 1.0
 
 # filtering stepping for discriminator
 # filters = {
@@ -33,6 +36,10 @@ vqvae:
     # }
 # TODO: There is for sure a much better way to handle getting the channel depths right for each resolution that either the above approach or the below, manual, approach
 discriminator:
+  discriminator_weight : 1.0
+
   filters : 256
   channel_multipliers : [2, 2, 2, 2] # half resolution of 64 4x to get to latent res of 4
   latent_dim : 512
+  adopt_d_loss_step : 250001
+  
