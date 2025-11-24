@@ -25,8 +25,8 @@ def calculate_d_loss(logits_real, logits_fake):
 # If the GAN grad beecomes too big, lambda goes down and g_loss weight is reduced. If rec grad is too big, lambda goes down
 # and g_loss weight is increased
 def calculate_adaptive_weight(vqvae_loss, g_loss, last_layer, epsilon = 1e-6, discriminator_weight = 1.0):
-    l_rec_grad = torch.autograd.grad(vqvae_loss, last_layer, retain_graph = True)
-    l_gan_grad = torch.autograd.grad(g_loss, last_layer, retain_graph = True)
+    (l_rec_grad,) = torch.autograd.grad(vqvae_loss, last_layer, retain_graph = True) #grad returns a tuple of the same size as the input so we gotta unpack it
+    (l_gan_grad,) = torch.autograd.grad(g_loss, last_layer, retain_graph = True)
 
     adaptive_weight = torch.norm(l_rec_grad) / (torch.norm(l_gan_grad) + epsilon)
     adaptive_weight = torch.clamp(adaptive_weight, 0, 1e4).detach() # clamping prevents explosions and nanloss when the training is initially unstable

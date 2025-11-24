@@ -79,7 +79,7 @@ class VQGANTrainer:
         return train_dataloader
     
     def load_checkpoint(self, checkpoint):
-        self.generator.load_state_dict(checkpoint['model_state_dict'])
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
         self.opt_g.load_state_dict(checkpoint['opt_g_state_dict'])
 
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
@@ -101,12 +101,18 @@ class VQGANTrainer:
     def train(self):
         train_dataloader = self.load_data()
         for epoch in range(self.start_epoch, self.num_epochs):
-            self.model.train()
+            self.generator.train()
+            self.discriminator.train()
 
             pbar = tqdm(train_dataloader, desc=f"Epoch {epoch} : {self.num_epochs}")
             losses = {'loss': 0,
                       'recon_loss': 0,
-                      'commit_loss': 0}
+                      'commit_loss': 0,
+                      'perceptual_loss': 0,
+                      'disc_loss': 0,
+                      'generator_loss': 0,
+                      'disc_factor': 0,
+                      'adaptive_weight': 0}
             steps_this_epoch = 0
 
             utilized_codebook = set()
@@ -122,7 +128,7 @@ class VQGANTrainer:
                 recon_loss = self.reconstruction_loss_fn(reconstructed_images, imgs)
                 perceptual_loss = torch.mean(self.perceptual_loss_fn(reconstructed_images, imgs))
                 # Not really sure why this is just a x + ay and not a (1-a)x + ax for 0 <= a <= 1. But this is what VQGAN does
-                perc_rec_loss = recon_loss + self.perceptual_weight(perceptual_loss) 
+                perc_rec_loss = recon_loss + self.perceptual_weight * perceptual_loss 
 
                 logits_fake = self.discriminator(reconstructed_images)
                 logits_real = self.discriminator(imgs)
@@ -131,28 +137,35 @@ class VQGANTrainer:
                                                      g_loss, 
                                                      self.generator.get_last_layer_weights(), 
                                                      discriminator_weight=self.discriminator_weight)
+
                 d_loss = calculate_d_loss(logits_fake = logits_fake,
                                           logits_real = logits_real)
                 cur_step = epoch * self.config['batch_size'] + steps_this_epoch
                 disc_factor = adopt_generator_weight(d_loss,
                                                      cur_step,
                                                      threshold = self.config['discriminator']['adopt_d_loss_step'],
-                                                     value = 0)
+                                                     value = epoch * self.config['batch_size'] + steps_this_epoch)
                 
                 loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss + self.codebook_weight * commitment_loss
                 
                 self.opt_g.zero_grad()
-                loss.backward()
-                self.opt_g.step()
+                loss.backward(retain_graph = True)
 
                 self.opt_d.zero_grad()
                 d_loss.backward()
+
+                self.opt_g.step()
                 self.opt_d.step()
 
                 # should save some images out around here
                 losses['loss'] += loss.item() * cur_batch_size
                 losses['recon_loss'] += recon_loss.item() * cur_batch_size
                 losses['commit_loss'] += commitment_loss.item() * cur_batch_size
+                losses['perceptual_loss'] += perceptual_loss.item() * cur_batch_size
+                losses['disc_loss'] += d_loss.item() * cur_batch_size
+                losses['generator_loss'] += g_loss.item() * cur_batch_size
+                losses['disc_factor'] += disc_factor * cur_batch_size
+                losses['adaptive_weight'] += adaptive_weight.item() * cur_batch_size
                 
                 pbar.set_postfix({
                     'Loss' : f"{losses['loss'] / steps_this_epoch:.5f}",
@@ -161,11 +174,13 @@ class VQGANTrainer:
                 })
 
             losses = {k : (v / self.len_data) for k, v in losses.items()}
-            print(f"Codebook utilization: {len(utilized_codebook) / self.config['vqae']['codebook_size']}")
+            print(f"Codebook utilization: {len(utilized_codebook) / self.config['vqvae']['codebook_size']}")
             
             if self.logger.update_losses(losses, epoch):
                 self.save_checkpoint(epoch, f"best_{epoch}.pt")
             self.save_checkpoint(epoch, f"latest_{epoch}.pt")
+
+            self.logger.write_logs()
             
         self.logger.write_logs()
 
@@ -175,6 +190,7 @@ def main():
     parser.add_argument("--load_checkpoint", action = 'store_true', required = False)
     parser.add_argument("--save_as", type = str, default = None, required = False)
     parser.add_argument("--verbose", action = 'store_true', required = False)
+    parser.add_argument("--overwrite_ok", action = 'store_true', required = False)
     args = parser.parse_args()
 
     config, out_dir, writer, checkpoint = utils.prepare_result_folder(args)

@@ -40,10 +40,11 @@ def prepare_result_folder(args : argparse.Namespace):
         checkpoint = None
 
     if os.path.exists(os.path.join("checkpoints", config_name)):
-        print(f"Contining will overwrite existing checkpoints in checkpoints/{config_name}.")
-        response = input("Type \"continue\" to continue.\n")
-        if response != "continue":
-            return
+        if not args.overwrite_ok:
+            print(f"Contining will overwrite existing checkpoints in checkpoints/{config_name}.")
+            response = input("Type \"continue\" to continue.\n")
+            if response != "continue":
+                return
     else:
         os.mkdir(os.path.join("checkpoints", config_name))
     
@@ -94,6 +95,5 @@ class Logger():
         return self.losses['loss']
     
     def write_logs(self):
-        print(self.losses)
         losses = pd.DataFrame(self.losses)
         losses.to_csv(os.path.join(self.out_dir, 'losses.csv'))

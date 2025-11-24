@@ -32,7 +32,7 @@ class ResBlock(nn.Module):
         if self.in_channels != self.out_channels:
             residual = self.increase_channels(residual)
 
-        x += residual
+        x = x + residual
 
         x = self.relu(x)
         return x
@@ -193,7 +193,8 @@ class VQVAE(nn.Module):
         self.decoder = Decoder(config)
 
     def load_checkpoints(self, path):
-        self.load_state_dict(torch.load(path)['model_state_dict'])
+        # self.load_state_dict(torch.load(path)['model_state_dict']) # this is the correct version for vqvae
+        self.load_state_dict(torch.load(path)['generator_state_dict'])
 
     def get_last_layer_weights(self):
         return self.decoder.model[-1].weight

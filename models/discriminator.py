@@ -2,32 +2,35 @@ import torch
 import torch.nn as nn
 import math
 
-class BlurPool2d(nn.modules):
+class BlurPool2d(nn.Module):
     def __init__(self, kernel_size = 4, stride = 2):
+        super(BlurPool2d, self).__init__()
         self.kernel_size = kernel_size
         # This block here of custom kernels is taken almost directly from the MaskGIT implementation
         if self.kernel_size == 3:
-            self.filter = [1., 2., 1.]
+            filter = [1., 2., 1.]
         elif self.kernel_size == 4:
-            self.filter = [1., 3., 3., 1.]
+            filter = [1., 3., 3., 1.]
         elif self.kernel_size == 5:
-            self.filter = [1., 4., 6., 4., 1.]
+            filter = [1., 4., 6., 4., 1.]
         elif self.kernel_size == 6:
-            self.filter = [1., 5., 10., 10., 5., 1.]
+            filter = [1., 5., 10., 10., 5., 1.]
         elif self.kernel_size == 7:
-            self.filter = [1., 6., 15., 20., 15., 6., 1.]
+            filter = [1., 6., 15., 20., 15., 6., 1.]
         else:
             raise ValueError('Only filter_size of 3, 4, 5, 6 or 7 is supported.')
 
-        self.filter = torch.tensor(self.filter)
-        self.filter = torch.outer(self.filter, self.filter)
-        self.filter /= torch.sum(self.filter)
+        filter = torch.tensor(filter)
+        filter = torch.outer(filter, filter)
+        filter /= torch.sum(filter)
         # F.conv2d takes: weight – filters of shape (out_channels,in_channels / groups,kH,kW)
-        filter = torch.reshape(self.filter, [1, 1, self.kernel_size, self.kernel_size])
+        filter = torch.reshape(filter, [1, 1, self.kernel_size, self.kernel_size])
+        self.register_buffer('filter', filter, persistent = False)
+        self.stride = 2
     
     def forward(self, x):
         channel_depth = x.shape[1] # input is n x c x h x w so idx 1 is c
-        depthwise_filter = torch.tile(filter, [channel_depth, 1, 1, 1])
+        depthwise_filter = torch.tile(self.filter, [channel_depth, 1, 1, 1])
         x = torch.nn.functional.conv2d(x,
                                 weight = depthwise_filter,
                                 stride = self.stride,
@@ -35,7 +38,7 @@ class BlurPool2d(nn.modules):
                                 padding = 1)
         return x
 
-class ResBlock(nn.module):
+class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, activation_function):
         super(ResBlock, self).__init__()
         self.in_channels = in_channels
@@ -46,15 +49,16 @@ class ResBlock(nn.module):
         self.conv2 = nn.Conv2d(in_channels, out_channels, kernel_size = 3, stride = 1, padding = 1)
         self.activation_function = activation_function
 
+        self.downsample = BlurPool2d(kernel_size = 4, stride = 2)
+
         if in_channels != out_channels:
             self.increase_channels = nn.Conv2d(in_channels, out_channels, kernel_size = 1, stride = 1, padding = 0)
 
     def forward(self, x):
-        residual = x
-
+        residual = self.downsample(x)
         x = self.conv1(x)
         x = self.activation_function(x)
-        x = BlurPool2d(x)
+        x = self.downsample(x)
         x = self.conv2(x)
         x = self.activation_function(x)
 
@@ -62,9 +66,10 @@ class ResBlock(nn.module):
             residual = self.increase_channels(residual)
 
         x = (x + residual) / math.sqrt(2)
+        return x
 
 # So MaskGIT's authors decided to use a global discriminator, but VQGAN's authors use a patch-based discriminator. I implemented the former, but I should go back and try the other later.
-class Discriminator(nn.module):
+class Discriminator(nn.Module):
     def __init__(self, config):
         super(Discriminator, self).__init__()
         filters = config['discriminator']['filters']
@@ -85,18 +90,21 @@ class Discriminator(nn.module):
         # But for now I should stick to what the StyleGAN2 people found to be effective
         for i in range(num_blocks):
             out_channels = filters * channel_multipliers[i]
-
             layers.append(ResBlock(in_channels, out_channels, activation_function = activation_function))
+            in_channels = out_channels
         
         layers.append(nn.Conv2d(filters*channel_multipliers[-1], filters*channel_multipliers[-1], kernel_size = 3, stride = 1, padding = 1))
         layers.append(activation_function)
         layers.append(nn.Flatten())
 
-        latent_resolution = config['resolution'] / (2 * num_blocks)
-        fcl_out = 512 # Using 512 as output dims here just because the MaskGIT implementation did. Should make this configurable
-        layers.append(nn.Linear(latent_resolution * config['discriminator']['latent_dim']), fcl_out) 
+        latent_resolution = int(config['resolution'] / (2 ** num_blocks))
+        
+        assert latent_resolution == 4, "Incorrect downsampling steps for latent res of 4 in disc"
+
+        lin_1_out = 512 # Using 512 as output dims here just because the MaskGIT implementation did. Should make this configurable
+        layers.append(nn.Linear(latent_resolution * latent_resolution * config['discriminator']['latent_dim'], lin_1_out))
         layers.append(activation_function)
-        layers.append(fcl_out, 1)
+        layers.append(nn.Linear(lin_1_out, 1))
 
         self.model = nn.Sequential(*layers)
 
