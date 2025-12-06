@@ -23,16 +23,27 @@ def read_config(config : str):
     return config, config_name
 
 def prepare_result_folder(args : argparse.Namespace):
-    config, config_name = read_config(args.config)
+    if args.load_checkpoint:
+        with open(os.path.join("checkpoints", args.config, "config.yaml")) as f:
+            config = yaml.safe_load(f)
+        config_name = args.config
+    else:
+        config, config_name = read_config(args.config)
+
     if args.save_as:
         config_name = args.save_as
         
     out_dir = os.path.join("checkpoints", config_name)
     if args.load_checkpoint:
         try:
-            checkpoint_path = glob.glob(os.path.join(out_dir, '*latest*.pt'))[0]
-            checkpoint = torch.load(checkpoint_path)
-            print(f"Continuing from saved checkpoint {checkpoint_path}\n")
+            if args.checkpoint == None:
+                checkpoint_path = glob.glob(os.path.join(out_dir, '*latest*.pt'))[0]
+                checkpoint = torch.load(checkpoint_path)
+                print(f"Continuing from latest saved checkpoint {checkpoint_path}\n")
+            else:
+                checkpoint_path = os.path.join(out_dir, args.checkpoint)
+                checkpoint = torch.load(checkpoint_path)
+                print(f"Continuing from specified checkpoint {checkpoint_path}\n")
         except Exception as e:
             print(f"Failed to load checkpoint: {e}")
             return
@@ -61,6 +72,15 @@ class Logger():
         self.losses = {}
         self.writer = writer
         self.out_dir = out_dir
+
+    def load_logs(self, epoch):
+        self.start_epoch = epoch
+        losses = pd.read_csv(os.path.join(self.out_dir, 'losses.csv')).iloc[:self.start_epoch]
+        losses = losses.drop('epoch', axis = 'columns')
+        for column in losses.columns:
+            self.best_losses[column] = losses[column].min()
+
+        self.losses = losses.to_dict(orient='list')
     
     def update_losses(self, losses : dict, epoch : int) -> bool:
         is_best = False
@@ -96,4 +116,5 @@ class Logger():
     
     def write_logs(self):
         losses = pd.DataFrame(self.losses)
-        losses.to_csv(os.path.join(self.out_dir, 'losses.csv'))
+        losses['epoch'] = range(len(losses))
+        losses.to_csv(os.path.join(self.out_dir, 'losses.csv'), index = False)

@@ -2,19 +2,45 @@ lr : .001
 batch_size : 64
 num_workers : 8
 num_epochs : 10
-train_dataset : data/stl10/small_data
+train_dataset : data/stl10/small_data_1000
 use_amp : False
 
 resolution : 64
-
+data_channels : 3
 means : [0.4471, 0.4402, 0.4070]
 stds : [0.2553, 0.2515, 0.2665]
 
-num_res_blocks : 2
-data_channels : 3
-filters : 128 # num channels after first transform
-channel_multipliers : [1, 2, 4]
-latent_dim : 256
+vqvae:
+  perceptual_weight : 1.0
 
-codebook_size : 1024
-codebook_dim : 256
+  num_res_blocks : 2
+  filters : 128 # num channels after first transform
+  channel_multipliers : [1, 2, 4]
+  latent_dim : 256
+
+  codebook_size : 1024
+  codebook_dim : 256
+  codebook_weight : 1.0
+
+# filtering stepping for discriminator
+# filters = {
+    #     4: 512,
+    #     8: 512,
+    #     16: 512,
+    #     32: 512,
+    #     64: 256 * self.channel_multiplier,
+    #     128: 128 * self.channel_multiplier,
+    #     256: 64 * self.channel_multiplier,
+    #     512: 32 * self.channel_multiplier,
+    #     1024: 16 * self.channel_multiplier,
+    # }
+# TODO: There is for sure a much better way to handle getting the channel depths right for each resolution that either the above approach or the below, manual, approach
+discriminator:
+  discriminator_weight : 1.0
+
+  filters : 256
+  channel_multipliers : [2, 2, 2, 2] # half resolution of 64 4x to get to latent res of 4
+  latent_dim : 512
+  adopt_d_loss_step : 1001
+  disc_factor : 1.0
+  

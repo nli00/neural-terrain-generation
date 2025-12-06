@@ -11,10 +11,12 @@ import utils
 from dataset import STL10Dataset
 from models.vqvae import VQVAE
 from models.discriminator import Discriminator
-from losses import adopt_generator_weight, calculate_adaptive_weight, calculate_d_loss
+from losses import adopt_generator_weight, calculate_adaptive_weight, bce_loss, hinge_loss
+
+import torch.nn.functional as F
 
 class VQGANTrainer:
-    def __init__(self, config, out_dir, summary_writer):
+    def __init__(self, config, out_dir, logger):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.generator = VQVAE(config)
@@ -27,9 +29,11 @@ class VQGANTrainer:
         self.reconstruction_loss_fn = torch.nn.MSELoss()
         self.perceptual_loss_fn = lpips.LPIPS(net = 'vgg').to(device = self.device)
 
-        self.discriminator_weight = config['discriminator']['discriminator_weight']
         self.perceptual_weight = config['vqvae']['perceptual_weight']
         self.codebook_weight = config['vqvae']['codebook_weight']
+        self.discriminator_weight = config['discriminator']['discriminator_weight']
+        self.disc_factor = config['discriminator']['disc_factor']
+        self.adopt_d_loss_step = config['discriminator']['adopt_d_loss_step']
 
         self.config = config
         self.num_epochs = config['num_epochs']
@@ -38,12 +42,12 @@ class VQGANTrainer:
 
         self.opt_g = torch.optim.Adam(
             self.generator.parameters(),
-            lr = self.config['lr']
+            lr = self.config['vqvae']['lr']
         )
 
         self.opt_d = torch.optim.Adam(
             self.discriminator.parameters(),
-            lr = self.config['lr'] # Using same LR for both rn
+            lr = self.config['discriminator']['lr']
         )
 
         self.use_amp = config['use_amp']
@@ -54,7 +58,7 @@ class VQGANTrainer:
         os.makedirs("results", exist_ok = True)
         os.makedirs("checkpoints", exist_ok = True)
 
-        self.logger = utils.Logger(summary_writer, self.out_dir)
+        self.logger = logger
 
     def load_data(self):
         training_data_means = self.config['means']
@@ -82,11 +86,17 @@ class VQGANTrainer:
         self.generator.load_state_dict(checkpoint['generator_state_dict'])
         self.opt_g.load_state_dict(checkpoint['opt_g_state_dict'])
 
+        # # ! temporary !
+        # for param_group in self.opt_g.param_groups:
+        #     param_group['lr'] = .00005
+
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
         self.opt_d.load_state_dict(checkpoint['opt_d_state_dict'])
 
         self.start_epoch = checkpoint['epoch'] + 1
         self.best_loss = checkpoint['best_loss']
+
+        self.logger.load_logs(self.start_epoch)
 
     def save_checkpoint(self, epoch, name):
         torch.save({
@@ -117,6 +127,8 @@ class VQGANTrainer:
 
             utilized_codebook = set()
 
+            # scheduler_d = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt_d, 10, eta_min=0.0001, last_epoch=-1)
+            # scheduler_g = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt_g, 10, eta_min=0.0001, last_epoch=-1)
             for imgs in pbar:
                 imgs = imgs.to(self.device)
                 cur_batch_size = imgs.size(0)
@@ -130,26 +142,34 @@ class VQGANTrainer:
                 # Not really sure why this is just a x + ay and not a (1-a)x + ax for 0 <= a <= 1. But this is what VQGAN does
                 perc_rec_loss = recon_loss + self.perceptual_weight * perceptual_loss 
 
-                logits_fake = self.discriminator(reconstructed_images)
-                logits_real = self.discriminator(imgs)
-                g_loss = -torch.mean(logits_fake) # This is a shortcut implementation of non-saturating loss
+                logits_fake_gen = self.discriminator(reconstructed_images)
+                # g_loss = -torch.mean(logits_fake_gen) # This is a shortcut implementation of non-saturating loss
+                g_loss = -torch.mean(torch.log(torch.sigmoid(logits_fake_gen))) # Full implementation of non-saturating loss
                 adaptive_weight = calculate_adaptive_weight(perc_rec_loss, 
                                                      g_loss, 
                                                      self.generator.get_last_layer_weights(), 
                                                      discriminator_weight=self.discriminator_weight)
-
-                d_loss = calculate_d_loss(logits_fake = logits_fake,
-                                          logits_real = logits_real)
-                cur_step = epoch * self.config['batch_size'] + steps_this_epoch
-                disc_factor = adopt_generator_weight(d_loss,
+                cur_step = epoch * self.len_data + steps_this_epoch
+                disc_factor = adopt_generator_weight(self.disc_factor,
                                                      cur_step,
-                                                     threshold = self.config['discriminator']['adopt_d_loss_step'],
-                                                     value = epoch * self.config['batch_size'] + steps_this_epoch)
+                                                     threshold = self.adopt_d_loss_step,
+                                                     value = 0)
+
+                logits_real = self.discriminator(imgs.contiguous().detach())
+                logits_fake = self.discriminator(reconstructed_images.contiguous().detach())
+                d_loss = hinge_loss(logits_fake = logits_fake,
+                                          logits_real = logits_real)
                 
+                # ! Temporary
+                with open('logits.csv', mode = 'a') as f:
+                    f.write(f'{torch.mean(logits_real.clone().detach()).item()},{torch.mean(logits_fake.clone().detach()).item()}\n')
+                
+                # d_power_factor = max(0, 1 - d_loss) # ! This works but I dont wanna have to use it
+                # loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss * d_power_factor + self.codebook_weight * commitment_loss
                 loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss + self.codebook_weight * commitment_loss
-                
+
                 self.opt_g.zero_grad()
-                loss.backward(retain_graph = True)
+                loss.backward(retain_graph=True)
 
                 self.opt_d.zero_grad()
                 d_loss.backward()
@@ -157,15 +177,18 @@ class VQGANTrainer:
                 self.opt_g.step()
                 self.opt_d.step()
 
+                # scheduler_d.step()
+                # scheduler_g.step()
+
                 # should save some images out around here
-                losses['loss'] += loss.item() * cur_batch_size
-                losses['recon_loss'] += recon_loss.item() * cur_batch_size
-                losses['commit_loss'] += commitment_loss.item() * cur_batch_size
-                losses['perceptual_loss'] += perceptual_loss.item() * cur_batch_size
-                losses['disc_loss'] += d_loss.item() * cur_batch_size
-                losses['generator_loss'] += g_loss.item() * cur_batch_size
+                losses['loss'] += loss.detach().item() * cur_batch_size
+                losses['recon_loss'] += recon_loss.detach().item() * cur_batch_size
+                losses['commit_loss'] += commitment_loss.detach().item() * cur_batch_size
+                losses['perceptual_loss'] += perceptual_loss.detach().item() * cur_batch_size
+                losses['disc_loss'] += d_loss.detach().item() * cur_batch_size
+                losses['generator_loss'] += g_loss.detach().item() * cur_batch_size
                 losses['disc_factor'] += disc_factor * cur_batch_size
-                losses['adaptive_weight'] += adaptive_weight.item() * cur_batch_size
+                losses['adaptive_weight'] += adaptive_weight.detach().item() * cur_batch_size
                 
                 pbar.set_postfix({
                     'Loss' : f"{losses['loss'] / steps_this_epoch:.5f}",
@@ -174,11 +197,14 @@ class VQGANTrainer:
                 })
 
             losses = {k : (v / self.len_data) for k, v in losses.items()}
-            print(f"Codebook utilization: {len(utilized_codebook) / self.config['vqvae']['codebook_size']}")
+            losses['codebook_utilization'] = len(utilized_codebook) / self.config['vqvae']['codebook_size']
             
             if self.logger.update_losses(losses, epoch):
                 self.save_checkpoint(epoch, f"best_{epoch}.pt")
             self.save_checkpoint(epoch, f"latest_{epoch}.pt")
+
+            if ((epoch + 1) % 50 == 0):
+                self.save_checkpoint(epoch, f"checkpoint_{epoch}.pt")
 
             self.logger.write_logs()
             
@@ -186,17 +212,29 @@ class VQGANTrainer:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type = str, help = "name of config file in configs/", required = True)
+    parser.add_argument("--config", type = str, help = "If training from 0: name of config file in configs. If resuming training, name of checkpoint dir", required = True)
     parser.add_argument("--load_checkpoint", action = 'store_true', required = False)
+    parser.add_argument("--checkpoint", type = str, required = False)
     parser.add_argument("--save_as", type = str, default = None, required = False)
     parser.add_argument("--verbose", action = 'store_true', required = False)
     parser.add_argument("--overwrite_ok", action = 'store_true', required = False)
     args = parser.parse_args()
 
     config, out_dir, writer, checkpoint = utils.prepare_result_folder(args)
+    logger = utils.Logger(writer, out_dir)
+
+    # ! Temporary!
+    with open("gan_grad.csv", mode = 'w') as f:
+        f.write('grad,g_loss\n')
+
+    with open("rec_grad.csv", mode = 'w') as f:
+        f.write('grad,rec_loss\n')
+
+    with open("logits.csv", mode = 'w') as f:
+        f.write('r,f\n')
 
     try:
-        trainer = VQGANTrainer(config, out_dir, writer)
+        trainer = VQGANTrainer(config, out_dir, logger)
         if args.load_checkpoint:
             trainer.load_checkpoint(checkpoint)
         trainer.train()

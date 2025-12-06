@@ -1,5 +1,4 @@
-lr : .001
-batch_size : 64
+batch_size : 32
 num_workers : 8
 num_epochs : 300
 train_dataset : data/stl10/train_images
@@ -11,6 +10,7 @@ means : [0.4471, 0.4402, 0.4070]
 stds : [0.2553, 0.2515, 0.2665]
 
 vqvae:
+  lr : .00005
   perceptual_weight : 1.0
 
   num_res_blocks : 2
@@ -36,10 +36,13 @@ vqvae:
     # }
 # TODO: There is for sure a much better way to handle getting the channel depths right for each resolution that either the above approach or the below, manual, approach
 discriminator:
+  lr : .0001
   discriminator_weight : 1.0
 
   filters : 256
   channel_multipliers : [2, 2, 2, 2] # half resolution of 64 4x to get to latent res of 4
   latent_dim : 512
-  adopt_d_loss_step : 250001
+  # adopt_d_loss_step : 250001
+  adopt_d_loss_step : 125001
+  disc_factor : 1.0
   
