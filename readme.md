@@ -20,7 +20,7 @@ Objectives:
 
 I started with verifying that I could replicate results from VQVAE on a similar dataset. 
 Below are results from VQVAE after training on STL10 for 50 epochs (Latent resolution of 8x8x256, codebook size 1024).
-![alt text](vqvae_example.png)
+![alt text](./.readme_images/vqvae_example.png)
 Reconstruction quality is passable, expecially considering the low latent resolution. There is clear blockiness in areas that should be soft gradients (clouds, sky), and loss of high frequency information (boat windows).
 
 ## Stage 2 [Completed]
@@ -29,11 +29,11 @@ Reconstruction quality is passable, expecially considering the low latent resolu
 The VQGAN is trained without the discriminator loss applied to the VAE for some initial period. Once the loss started to be incorporated into the VAE loss function, however, the discriminator quickly lost its ability to discriminate and develoved into noise. The VQGAN's adaptive loss scaling, which increases the weight of the discriminator loss relative to the combined perceptual and reconstruction loss amplified this noise since the gradients in the discriminator were still very large. As such, the loss function was dominated by the spurious discriminator signal to the detriment of the reconstruction quality. To improve the quality of the signal from the discriminator, I applied a scaling factor to the generator loss inversely proportional to the discriminator loss. Thus, when the discriminator loss is very high, the generator largely trains only on the perceptual / reconstruction loss. As the discriminator gains power, the generator pays more attention to its feedback. As such, the generator and discriminator are more balanced, with neither dying out due to the other getting too good. This, as well as some other small changes such as the adoption of hinge loss for the discriminator and non-saturating loss for the generator were able to stabilize training and produce good results:
 
 STL10 (50 epochs):
-![alt text](image-1.png)
+![alt text](./.readme_images/image-1.png)
 Note the superior color reproduction on the birds and sharper detail in the sky. While the boat and the far right image show better sharpness, they also have some clear artifacting.
 
 USGS DEM (100 epochs, tiff converted to png for memory conservation):
-![alt text](image-2.png)
+![alt text](./.readme_images/image-2.png)
 The reconstructions successfully captures the general contours of the terrain, but struggle somewhat still with high frequency information and oversmooths some gradients.
 
 ## Stage 3 [WIP]
