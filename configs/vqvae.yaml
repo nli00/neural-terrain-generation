@@ -4,6 +4,7 @@ num_workers : 8
 num_epochs : 50
 train_dataset : data/stl10/train_images
 use_amp : False
+dataset : STL10
 
 resolution : 64
 

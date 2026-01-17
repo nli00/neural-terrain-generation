@@ -197,7 +197,7 @@ class VQVAE(nn.Module):
         self.load_state_dict(torch.load(path)['generator_state_dict'])
 
     def get_last_layer_weights(self):
-        return self.decoder.model[-1]
+        return self.decoder.model[-1].weight
 
     def forward(self, batch):
         encoded_images = self.encoder(batch)

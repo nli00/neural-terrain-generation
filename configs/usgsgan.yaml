@@ -1,14 +1,14 @@
 batch_size : 32
 num_workers : 8
 num_epochs : 300
-train_dataset : data/stl10/train_images
+train_dataset : data/train_geo
 use_amp : False
-dataset : STL10
+dataset : USGS
 
 resolution : 64
-data_channels : 3
-means : [0.4471, 0.4402, 0.4070]
-stds : [0.2553, 0.2515, 0.2665]
+data_channels : 1
+means : [0.5256]
+stds : [0.1799]
 
 vqvae:
   lr : .00005

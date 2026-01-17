@@ -1,9 +1,9 @@
-lr : .001
 batch_size : 64
 num_workers : 8
 num_epochs : 10
 train_dataset : data/stl10/small_data_1000
 use_amp : False
+dataset : STL10
 
 resolution : 64
 data_channels : 3
@@ -11,6 +11,7 @@ means : [0.4471, 0.4402, 0.4070]
 stds : [0.2553, 0.2515, 0.2665]
 
 vqvae:
+  lr : .01
   perceptual_weight : 1.0
 
   num_res_blocks : 2
@@ -36,6 +37,7 @@ vqvae:
     # }
 # TODO: There is for sure a much better way to handle getting the channel depths right for each resolution that either the above approach or the below, manual, approach
 discriminator:
+  lr : .01
   discriminator_weight : 1.0
 
   filters : 256

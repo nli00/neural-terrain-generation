@@ -1,6 +1,6 @@
 import torch
 from torch.amp import autocast, GradScaler
-from torchvision import transforms
+from torchvision.transforms import v2
 
 import os
 from tqdm import tqdm
@@ -8,7 +8,7 @@ import argparse
 import lpips
 
 import utils
-from dataset import STL10Dataset
+from dataset import STL10Dataset, USGSDataset
 from models.vqvae import VQVAE
 from models.discriminator import Discriminator
 from losses import adopt_generator_weight, calculate_adaptive_weight, bce_loss, hinge_loss
@@ -17,6 +17,8 @@ import torch.nn.functional as F
 
 class VQGANTrainer:
     def __init__(self, config, out_dir, logger):
+        self.dataset = config['dataset']
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.generator = VQVAE(config)
@@ -64,13 +66,28 @@ class VQGANTrainer:
         training_data_means = self.config['means']
         training_data_stds = self.config['stds']
 
-        training_transforms = transforms.Compose(
-            [transforms.Resize((self.config['resolution'], self.config['resolution'])),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=training_data_means, std=training_data_stds)]
-        )
+        # TODO: replace PIL pipeline fully with torch tensors for performance
+        # So that means all this casing is temporary
+        if self.dataset == 'STL10':
+            training_transforms = v2.Compose(
+                [v2.Resize((self.config['resolution'], self.config['resolution'])),
+                v2.ToTensor(),
+                v2.Normalize(mean=training_data_means, std=training_data_stds)
+            ])
+        elif self.dataset == 'USGS':
+            training_transforms = v2.Compose([
+                v2.Resize((self.config['resolution'], self.config['resolution'])),
+                v2.Normalize(mean=training_data_means, std=training_data_stds)
+            ])
+        else:
+            raise NotImplementedError
 
-        train_dataset = STL10Dataset(root_dir = self.config['train_dataset'], transform = training_transforms)
+        if self.dataset == 'STL10':
+            train_dataset = STL10Dataset(root_dir = self.config['train_dataset'], transform = training_transforms)
+        elif self.dataset == 'USGS':
+            train_dataset = USGSDataset(root_dir = self.config['train_dataset'], transform = training_transforms)
+        else:
+            raise NotImplementedError
         self.len_data = len(train_dataset)
 
         train_dataloader = torch.utils.data.DataLoader(
@@ -139,7 +156,7 @@ class VQGANTrainer:
 
                 recon_loss = self.reconstruction_loss_fn(reconstructed_images, imgs)
                 perceptual_loss = torch.mean(self.perceptual_loss_fn(reconstructed_images, imgs))
-                # Not really sure why this is just a x + ay and not a (1-a)x + ax for 0 <= a <= 1. But this is what VQGAN does
+                # Not really sure why this is just x + ay and not (1-a)x + ay for 0 <= a <= 1. But this is what VQGAN does
                 perc_rec_loss = recon_loss + self.perceptual_weight * perceptual_loss 
 
                 logits_fake_gen = self.discriminator(reconstructed_images)
@@ -164,9 +181,9 @@ class VQGANTrainer:
                 with open('logits.csv', mode = 'a') as f:
                     f.write(f'{torch.mean(logits_real.clone().detach()).item()},{torch.mean(logits_fake.clone().detach()).item()}\n')
                 
-                # d_power_factor = max(0, 1 - d_loss) # ! This works but I dont wanna have to use it
-                # loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss * d_power_factor + self.codebook_weight * commitment_loss
-                loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss + self.codebook_weight * commitment_loss
+                d_power_factor = max(0, 1 - d_loss) # ! This works but I dont wanna have to use it
+                loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss * d_power_factor + self.codebook_weight * commitment_loss
+                # loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss + self.codebook_weight * commitment_loss
 
                 self.opt_g.zero_grad()
                 loss.backward(retain_graph=True)
@@ -216,7 +233,7 @@ def main():
     parser.add_argument("--load_checkpoint", action = 'store_true', required = False)
     parser.add_argument("--checkpoint", type = str, required = False)
     parser.add_argument("--save_as", type = str, default = None, required = False)
-    parser.add_argument("--verbose", action = 'store_true', required = False)
+    # parser.add_argument("--verbose", action = 'store_true', required = False)
     parser.add_argument("--overwrite_ok", action = 'store_true', required = False)
     args = parser.parse_args()
 
