@@ -8,7 +8,7 @@ Existing approaches to procedural generation of terrain fail to account for the 
 
 By leveraging a transformer trained on the abstract space of a VQGAN, this model aims to produce topologically and geologically coherent height maps with meaningful long-range relations and infinite extensibility. 
 
-Objectives:
+### Objectives:
 1) Implement MaskGIT and generate height maps based on real world elevation data.
 2) Integrate climatological data and geological data to provide coherent climate and rock types which can inform later steps of generation (vegetation, surface material, weather) and produce meaningful environments
 3) (Optional) Replace MaskGIT scheduler to allow for explicit control over the order in which tokens are generated
