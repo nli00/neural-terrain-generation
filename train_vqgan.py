@@ -103,7 +103,7 @@ class VQGANTrainer:
         self.generator.load_state_dict(checkpoint['generator_state_dict'])
         self.opt_g.load_state_dict(checkpoint['opt_g_state_dict'])
 
-        # # ! temporary !
+        # If I want to implement LR adjustment for fine-tuning later or something
         # for param_group in self.opt_g.param_groups:
         #     param_group['lr'] = .00005
 
@@ -144,8 +144,6 @@ class VQGANTrainer:
 
             utilized_codebook = set()
 
-            # scheduler_d = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt_d, 10, eta_min=0.0001, last_epoch=-1)
-            # scheduler_g = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt_g, 10, eta_min=0.0001, last_epoch=-1)
             for imgs in pbar:
                 imgs = imgs.to(self.device)
                 cur_batch_size = imgs.size(0)
@@ -177,13 +175,12 @@ class VQGANTrainer:
                 d_loss = hinge_loss(logits_fake = logits_fake,
                                           logits_real = logits_real)
                 
-                # ! Temporary
+                # TODO: Move this functionality over the the logger. This is useful to determine on a more granulary basis what is happening when the discriminator is doing well or poorly
                 with open('logits.csv', mode = 'a') as f:
                     f.write(f'{torch.mean(logits_real.clone().detach()).item()},{torch.mean(logits_fake.clone().detach()).item()}\n')
                 
-                d_power_factor = max(0, 1 - d_loss) # ! This works but I dont wanna have to use it
+                d_power_factor = max(0, 1 - d_loss)
                 loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss * d_power_factor + self.codebook_weight * commitment_loss
-                # loss = perc_rec_loss + disc_factor * adaptive_weight * g_loss + self.codebook_weight * commitment_loss
 
                 self.opt_g.zero_grad()
                 loss.backward(retain_graph=True)
@@ -194,10 +191,6 @@ class VQGANTrainer:
                 self.opt_g.step()
                 self.opt_d.step()
 
-                # scheduler_d.step()
-                # scheduler_g.step()
-
-                # should save some images out around here
                 losses['loss'] += loss.detach().item() * cur_batch_size
                 losses['recon_loss'] += recon_loss.detach().item() * cur_batch_size
                 losses['commit_loss'] += commitment_loss.detach().item() * cur_batch_size
@@ -233,14 +226,14 @@ def main():
     parser.add_argument("--load_checkpoint", action = 'store_true', required = False)
     parser.add_argument("--checkpoint", type = str, required = False)
     parser.add_argument("--save_as", type = str, default = None, required = False)
-    # parser.add_argument("--verbose", action = 'store_true', required = False)
     parser.add_argument("--overwrite_ok", action = 'store_true', required = False)
     args = parser.parse_args()
 
     config, out_dir, writer, checkpoint = utils.prepare_result_folder(args)
     logger = utils.Logger(writer, out_dir)
 
-    # ! Temporary!
+    # TODO: TODO: move this over the the logger or get rid of it. This initializes some files for the adaptive weight function to log grads into,
+    # but it really should be done by the logger so that it doesn't get overwritten each time the training runs.
     with open("gan_grad.csv", mode = 'w') as f:
         f.write('grad,g_loss\n')
 

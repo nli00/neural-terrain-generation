@@ -43,10 +43,8 @@ class UpsampleLayer(nn.Module):
         self.conv = nn.Conv2d(channels, channels, kernel_size = 3, stride = 1, padding = 1)
 
     def forward(self, x):
-        # print(x.shape)
         x = F.interpolate(x, scale_factor = 2.0, mode = 'nearest')
         x = self.conv(x)
-        # print(x.shape)
         return x
 
 class DownsampleLayer(nn.Module):
@@ -55,8 +53,6 @@ class DownsampleLayer(nn.Module):
         self.conv = nn.Conv2d(channels, channels, kernel_size = 4, stride = 2, padding = 1)
     
     def forward(self, x):
-        # pad = (1, 2, 1, 2)
-        # x = F.pad(x, pad, mode="constant", value = 0)
         x = self.conv(x)
         return x
 
@@ -73,11 +69,6 @@ class Encoder(nn.Module):
         first_conv = nn.Conv2d(input_channels, filters, kernel_size = 3, stride = 1, padding = 1)
         layers = [first_conv]
 
-        # So I could either have the ResBlock multiply the channels or I could have the downsample layer do it
-        # // I'm going with the latter because it should be less computationally expensive
-        # // But the former could potentially be more expressive as the second ResBlock would get to work at a deeper channel depth with the full resolution
-        # Never mind, im having the ResBlock multiply the channels because the maskGIT implementation does that
-        # Another thing to note is that I'm not really sure if the downsample layer goes before or after each residual block. I have it after.
         num_blocks = len(channel_multipliers)
         in_channels = filters * channel_multipliers[0]
         for i in range(num_blocks):
@@ -88,9 +79,6 @@ class Encoder(nn.Module):
                 layers.append(ResBlock(out_channels, out_channels))
 
             if i < num_blocks - 1:
-                # // Halves the resolution and multiplies the channels according to the channel_multipliers
-                # out_channels = filters * channel_multipliers[i + 1]
-                # downsample_layer = nn.Conv2d(out_channels, out_channels, kernel_size = 4, stride = 2, padding = 2)
                 downsample_layer = DownsampleLayer(out_channels)
                 layers.append(downsample_layer)
 
@@ -193,7 +181,6 @@ class VQVAE(nn.Module):
         self.decoder = Decoder(config)
 
     def load_checkpoints(self, path):
-        # self.load_state_dict(torch.load(path)['model_state_dict']) # this is the correct version for vqvae
         self.load_state_dict(torch.load(path)['generator_state_dict'])
 
     def get_last_layer_weights(self):

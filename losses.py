@@ -9,8 +9,9 @@ So basically we don't want to add the generator loss from the start because
 def adopt_generator_weight(weight, global_step, threshold = 0, value = 0):
     if global_step < threshold:
         weight = value
-    # else: # ! also temporary
-    #     weight = min((global_step - threshold) / (threshold), 1) # ! also temporary
+    # Experiementing with easing in the generator loss rather than toggling it on
+    # else: 
+    #     weight = min((global_step - threshold) / (threshold), 1)
     return weight
 
 def bce_loss(logits_real, logits_fake):
@@ -31,7 +32,9 @@ def calculate_adaptive_weight(vqvae_loss, g_loss, last_layer, epsilon = 1e-6, di
     (l_rec_grad,) = torch.autograd.grad(vqvae_loss, last_layer, retain_graph = True) #grad returns a tuple of the same size as the input so we gotta unpack it
     (l_gan_grad,) = torch.autograd.grad(g_loss, last_layer, retain_graph = True)
 
-    # ! Temporary
+    # TODO: move this over the the logger or get rid of it -- right now it logs grads 
+    # in a csv that gets overwritten each time, rather than in the checkpoint directory where it could be preserved for future reference
+    # still potentially usefull for tuning the adaptive weight
     with open("gan_grad.csv", mode = 'a') as f:
         f.write(str(torch.norm(l_gan_grad).item()) + ',' + str(g_loss.item()) + '\n')
 
@@ -39,7 +42,6 @@ def calculate_adaptive_weight(vqvae_loss, g_loss, last_layer, epsilon = 1e-6, di
         f.write(str(torch.norm(l_rec_grad).item())  + ',' + str(vqvae_loss.item()) + '\n')
 
     adaptive_weight = torch.norm(l_rec_grad) / (torch.norm(l_gan_grad) + epsilon)
-    # adaptive_weight = torch.clamp(adaptive_weight, 0, 1e4).detach() # clamping prevents explosions and nanloss when the training is initially unstable
-    # adaptive_weight = torch.clamp(adaptive_weight, 0, 1).detach() # ! temporary
+    adaptive_weight = torch.clamp(adaptive_weight, 0, 1e4).detach() # clamping prevents explosions and nanloss when the training is initially unstable
     adaptive_weight = discriminator_weight * adaptive_weight
     return adaptive_weight

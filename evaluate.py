@@ -104,18 +104,9 @@ def main():
     if not os.path.exists(out_path):
         os.makedir(out_path)
 
-    # dirs = os.listdir(out_path)
-    # if len(dirs) == 0:
-    #     highest_index = 0
-    # else:
-    #     highest_index = int(sorted(dirs)[-1].split('_')[-1])
-
-    # out_path = os.path.join(out_path, f"test_{highest_index + 1}")
+    # Saves image out in ./results with name corresponding the checkpoint used
     out_path = os.path.join(out_path, f"{args.checkpoint_dir}_{args.checkpoint[:-3]}")
     os.mkdir(out_path)
-
-    # with open(os.path.join(out_path, "config.yaml"), 'w') as f:
-    #     yaml.dump(config, f)
 
     save_image(
         grid, 
