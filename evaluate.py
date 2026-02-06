@@ -3,6 +3,7 @@ import os
 from torchvision.utils import save_image, make_grid
 from torchvision.transforms import v2
 import numpy as np
+import lpips
 
 from models.vqvae import VQVAE
 from dataset import STL10Dataset, USGSDataset
@@ -28,7 +29,7 @@ def load_data(means, stds, dataset, resolution):
         raise NotImplementedError
 
     if dataset == 'STL10':
-        data = STL10Dataset(root_dir = "data/stl10/test_images", transform = training_transforms)
+        data = STL10Dataset(root_dir = "data/stl10/train_images", transform = training_transforms)
     elif dataset == 'USGS':
         data = USGSDataset(root_dir = "data/test_geo", transform = training_transforms)
     else:
@@ -92,10 +93,20 @@ def main():
     with open(os.path.join("checkpoints", args.checkpoint_dir, "config.yaml")) as f:
         config = yaml.safe_load(f)
 
-    dataloader = load_data(means = config['means'], stds = config['stds'], dataset = config['dataset'], resolution = config['resolution'])
+    try:
+        dataloader = load_data(means = config['means'], stds = config['stds'], dataset = config['dataset'], resolution = config['resolution'])
+    except KeyError:
+        dataloader = load_data(means = config['means'], stds = config['stds'], dataset = "STL10", resolution = config['resolution'])
 
     imgs, reconstructions = evaluate(checkpoint_path = os.path.join("checkpoints", args.checkpoint_dir, args.checkpoint), 
                                      dataloader = dataloader, config = config)
+    
+    perceptual_loss_fn = lpips.LPIPS(net = 'vgg').to(device = 'cuda' if torch.cuda.is_available else 'cpu')
+    perc_loss = torch.mean(perceptual_loss_fn(reconstructions, imgs))
+    print(f"Perceptual loss: {perc_loss}")
+    reconstruction_loss_fn = torch.nn.MSELoss()
+    loss = reconstruction_loss_fn(reconstructions, imgs)
+    print(f"MSE loss: {loss}")
 
     grid = visualize(imgs, reconstructions, config['means'], config['stds'])
 
