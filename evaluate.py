@@ -83,7 +83,12 @@ def evaluate(checkpoint_path, dataloader, config):
         reconstruction, _, _ = model(imgs)
 
     return imgs, reconstruction
-    
+
+
+"""
+Evaluate vqvae or vqgan reconstruction with MSE loss and perceptual loss. Produces a grid of original images
+and reconstructions in results directory
+"""
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint_dir", type = str, help = "path to directory with checkpoint", required = True)

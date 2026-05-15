@@ -22,6 +22,10 @@ def read_config(config : str):
 
     return config, config_name
 
+'''
+Utility to prepare the out directory, the logger, and identify the checkpoint to resume from for VQGAN training.
+
+'''
 def prepare_result_folder(args : argparse.Namespace):
     if args.load_checkpoint:
         with open(os.path.join("checkpoints", args.config, "config.yaml")) as f:
@@ -66,6 +70,8 @@ def prepare_result_folder(args : argparse.Namespace):
 
     return config, out_dir, writer, checkpoint
 
+# TODO: separate the logic for tracking losses and managing checkpoints. The trainer should manage checkpoints
+# and the logger should be responsible for logging only
 class Logger():
     def __init__(self, writer, out_dir):
         self.best_losses = {}

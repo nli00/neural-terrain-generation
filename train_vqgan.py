@@ -115,6 +115,8 @@ class VQGANTrainer:
 
         self.logger.load_logs(self.start_epoch)
 
+    # TODO: This should save all the losses so performance can be properly validated (need to be able to measure gap between train validate)
+    # Really, why am I just saving the best loss? When this is a latest save, it doesn't make sense to save the best loss
     def save_checkpoint(self, epoch, name):
         torch.save({
             'epoch' : epoch,
@@ -213,6 +215,9 @@ class VQGANTrainer:
                 self.save_checkpoint(epoch, f"best_{epoch}.pt")
             self.save_checkpoint(epoch, f"latest_{epoch}.pt")
 
+            # This is here to save checkpoints intermittently on longer training runs. If something goes wrong,
+            # or training becomes unstable and collapses, we can resume at an okay point. We can also determine if
+            # longer training is actually beneficial
             if ((epoch + 1) % 50 == 0):
                 self.save_checkpoint(epoch, f"checkpoint_{epoch}.pt")
 

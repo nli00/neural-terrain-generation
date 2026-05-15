@@ -1,0 +1,18 @@
+# Test config for training transfomer.
+indices_pt : data/train_geo/codebook_indices.pt
+
+batch_size : 32
+num_workers : 8
+use_amp : False
+
+lr : .0001
+num_epochs : 100
+
+sequence_length : 256 # 16 x 16 grid
+codebook_size : 1024
+hidden_dim : 768
+num_hidden_layers : 12
+num_attention_heads : 8
+mlp_hidden_dim : 3072
+hidden_dropout_rate : 0.1
+attention_dropout_rate : 0.1
