@@ -17,46 +17,7 @@ from dataset import EncodedImageDataset
 from models.transformer import Transformer
 
 from scheduler import cosine_schedule
-
-def mask_inputs(
-    indices: torch.Tensor,
-    mask_token_id: int,
-    mask_scheduler,
-    ignore_index = -100
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Vectorized operation to mask proportion of each sequence using masking scheduler.
-
-    Args:
-        indices: (B, L) integer codebook indices in [0, codebook_size - 1].
-        mask_token_id: integer id written at masked positions (expected: codebook_size).
-        mask_scheduler: scheduler; input (B,) in (0, 1], output (B,) mask fractions.
-    """
-    if indices.dim() != 2:
-        raise ValueError(f"indices must be (B, L); got shape {tuple(indices.shape)}")
-
-    device = indices.device
-    B, L = indices.shape
-
-    random_iters = torch.rand(B, device=device) # These inputs to the mask scheduler are drawn from a uniform (0,1] and correspond to random iterations in the masking schedule used in decoding
-    mask_ratios = mask_scheduler(random_iters)
-
-    num_to_mask = (mask_ratios * L).floor().long().clamp(1, L - 1)
-
-    noise = torch.rand(B, L, device = device)
-
-    sorted_noise, _ = torch.sort(noise, dim = 1) # Sort the noise along the sequence axis
-    thresholds = torch.gather(sorted_noise, dim = 1, index = num_to_mask.view(-1, 1) - 1) # need view -1, 1 because num_to_mask has shape B and sorted noise has shape B, L. This view makes them both 2D and alignes the B dim
-    
-    mask = noise <= thresholds # <= here because if thresholds grabs the value of the 5th item, and we want 5 items, we should include that item.
-    
-    masked_indices = indices.clone()
-    masked_indices[mask] = mask_token_id
-
-    labels = torch.full_like(indices, ignore_index)
-    labels[mask] = indices[mask]
-
-    return masked_indices, labels
+from masking import mask_inputs
 
 class TransformerTrainer:
     def __init__(
@@ -197,6 +158,8 @@ class TransformerTrainer:
                 avg_loss = total_epoch_loss / num_steps
 
                 # Write average loss so far to progress bar
+                # By the way, this is an average of averages since the CSE loss already reports a weighted average, so this reported loss
+                # should be used for reference during training only, not as a metric
                 batch_iter.set_postfix({'avg_loss': f"{avg_loss:.4f}"})
 
                 self.optimizer.zero_grad(set_to_none=True)
