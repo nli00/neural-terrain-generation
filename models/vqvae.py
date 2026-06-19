@@ -131,6 +131,7 @@ class VectorQuantizer(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, config):
         super(Decoder, self).__init__()
+        padding_mode = "zeros"
 
         output_channels = config['data_channels']
         num_res_blocks = config['vqvae']['num_res_blocks']
@@ -140,7 +141,7 @@ class Decoder(nn.Module):
 
         # This could totally be a 1x1 convolution to mirror the structure of the last convolution of the encoder, but I'm following what 
         # maskGIT is doing here and starting with a 3x3
-        first_conv = nn.Conv2d(latent_dim, filters * channel_multipliers[-1], kernel_size = 3, stride = 1, padding = 1)
+        first_conv = nn.Conv2d(latent_dim, filters * channel_multipliers[-1], kernel_size = 3, stride = 1, padding = 1, padding_mode = padding_mode)
         layers = [first_conv]
 
         for _ in range(num_res_blocks):
@@ -166,7 +167,7 @@ class Decoder(nn.Module):
         final_channels = filters * channel_multipliers[0]
         layers.append(nn.BatchNorm2d(final_channels))
         layers.append(nn.ReLU())
-        layers.append(nn.Conv2d(final_channels, output_channels, kernel_size = 3, stride = 1, padding = 1)) # Squish back down to the channels of the image we are trying to produce
+        layers.append(nn.Conv2d(final_channels, output_channels, kernel_size = 3, stride = 1, padding = 1, padding_mode = padding_mode)) # Squish back down to the channels of the image we are trying to produce
 
         self.model = nn.Sequential(*layers)
     

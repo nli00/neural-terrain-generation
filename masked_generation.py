@@ -40,9 +40,17 @@ class Masked_Generator():
         self.model.to(self.device)
 
     def load_data(self, data: EncodedImageDataset):
+        # dataloader = torch.utils.data.DataLoader(
+        #     data,
+        #     batch_size = self.config["batch_size"],
+        #     shuffle = False,
+        #     num_workers = self.config["num_workers"],
+        #     pin_memory = True
+        # )
+
         dataloader = torch.utils.data.DataLoader(
             data,
-            batch_size = self.config["batch_size"],
+            batch_size = 64,
             shuffle = False,
             num_workers = self.config["num_workers"],
             pin_memory = True
@@ -50,7 +58,7 @@ class Masked_Generator():
 
         return dataloader
 
-    def visualize(self, reconstructions):
+    def visualize(self, reconstructions, nrow=None):
         """
         Un-normalize images and produce visualization assuming that reconstructions has a depth of 1
         """
@@ -60,45 +68,17 @@ class Masked_Generator():
 
         reconstructions = reconstructions * std + mean # un normalize the images
 
+        if nrow is None:
+            nrow = reconstructions.shape[0]
+
         grid = make_grid(
             tensor=reconstructions, 
-            nrow=64, 
+            nrow=nrow, 
             padding=0, 
             pad_value=1.0
             )
 
         return grid
-
-    """
-        def mask_git_iterative_sampling(self, input_ids, mask, n_steps = 8):
-        prediction_region = input_ids[mask == 0]
-        prediction_region_length = len(prediction_region)
-        cumulative_keep = mask.clone()
-        final_output = input_ids.clone()
-
-        n_mask_t = prediction_region_length
-        for i in range(1, n_steps):  # The initial input ids are already masked, so we've done the first step of the schedule already
-            # Section 3.2 step 3 https://arxiv.org/pdf/2202.04200
-            n_mask_t1 = int(torch.ceil(cosine_schedule(torch.tensor(i / n_steps)) * prediction_region_length).item())  # make sure this is a python int
-            n_keep = n_mask_t - n_mask_t1
-
-            logits = self.model(input_ids) # B x L x C
-            probs = F.softmax(logits, dim = -1)
-
-            confidences, predictions = torch.max(probs, dim = -1)  # B x L
-            confidences = confidences.clone()
-            confidences[cumulative_keep] = -1.0  # # Artifically set the probabilities of the seed regions (where mask = 1) to -1 so they aren't selected as we look for the highest confidence patches
-
-            # Find the n_keep highest confidence indices overall (flattened B x L)
-            confidences_flat = confidences.flatten()
-            if n_keep > 0:
-                topk_conf, topk_idx = torch.topk(confidences_flat, k=int(n_keep))
-                # Convert flattened indices back to (B, L) coordinates
-                b_idx = topk_idx // confidences.shape[1]
-                l_idx = topk_idx % confidences.shape[1]
-                # Set cumulative_keep at these coordinates to 1 (unmask/keep these tokens)
-                cumulative_keep[b_idx, l_idx] = predictions[b_idx, l_idx]
-    """
 
     def mask_git_iterative_sampling(self, input_ids, mask, n_steps = 8):
         prediction_region_length = torch.sum(mask, dim = -1, keepdim = True)
@@ -163,11 +143,29 @@ class Masked_Generator():
 
         final_tokens = self.mask_git_iterative_sampling(input_ids, mask, n_steps = 8)
 
+        return final_tokens, idx # B x L, B x L
+
+    def autoregressive_outpaint(self, idx, mask_proportion = .5):
+        input_ids, mask = outpaint_right(
+            idx,
+            self.mask_token_id,
+            mask_proportion
+        )
+
+        # logits = self.model(input_ids) # B x L x C
+        # predicted_indices = torch.argmax(logits, dim=-1) # B x L
+
+        # final_tokens = torch.where(mask, input_ids, predicted_indices) # Force the unmasked regions back to their original values
+
+        final_tokens = self.mask_git_iterative_sampling(input_ids, mask, n_steps = 8)
+
         return final_tokens # B x L
 
-    def decode(self, predicted_indices):
+    def decode(self, predicted_indices, patch_dimensions=None):
         """
-        Decode predicted indices to an image. Predicted indices have shape B x L
+        Decode predicted indices to an image. 
+        predicted_indices: B x L
+        patch_dimensions: optional (in units of patches). If None, assumes square (H=W). Otherwise, uses specified height and width.
         """
         checkpoint_path = self.config['vqgan_checkpoint']
         
@@ -197,9 +195,14 @@ class Masked_Generator():
         # Unflatten to B x L x C
         embeddings = embeddings.view(B, L, codebook_dim) # (B, L, C)
 
-        # Reshape to B x C x H x W where H * W = L (assume square)
-        H = W = int(L ** 0.5)
-        assert H * W == L, "Sequence length L must be a perfect square to reshape to 2D grid"
+        # Determine proper height/width
+        if patch_dimensions is not None:
+            H, W = patch_dimensions
+            assert H * W == L, f"Provided height*width ({H}*{W}={H*W}) does not match sequence length L={L}"
+        else:
+            # Default to square
+            H = W = int(L ** 0.5)
+            assert H * W == L, "Sequence length L must be a perfect square to reshape to 2D grid if no height/width provided"
 
         embeddings = embeddings.permute(0, 2, 1) # B x C x L
         embeddings = embeddings.view(B, codebook_dim, H, W) # B x C x H x W
@@ -211,8 +214,61 @@ class Masked_Generator():
         return reconstructions
 
     def generate(self, data):
-        indices = self.outpaint(data)
-        reconstructions = self.decode(indices)
+        generated_indices, original_indices = self.outpaint(data)
+        generated_reconstructions = self.decode(generated_indices)
+        original_reconstructions = self.decode(original_indices)
+
+        # Two-row visualization: generated samples on top, originals on bottom.
+        stacked = torch.cat([generated_reconstructions, original_reconstructions], dim=0)
+        images = self.visualize(stacked, nrow=generated_reconstructions.shape[0])
+
+        return images
+
+    def generate_2(self, data):
+        divisor = 4
+        mask_proportion = 1/divisor
+        indices, _ = self.outpaint(data)
+        indices_2 = self.autoregressive_outpaint(indices, mask_proportion=mask_proportion)
+        indices_3 = self.autoregressive_outpaint(indices_2, mask_proportion=mask_proportion)
+        indices_4 = self.autoregressive_outpaint(indices_3, mask_proportion=mask_proportion)
+        indices_5 = self.autoregressive_outpaint(indices_4, mask_proportion=mask_proportion)
+        indices_6 = self.autoregressive_outpaint(indices_5, mask_proportion=mask_proportion)
+        indices_7 = self.autoregressive_outpaint(indices_6, mask_proportion=mask_proportion)
+
+        # Concatenate indices, indices_2, and indices_3 horizontally, with 50% overlap between each pair
+
+        # All inputs: [B, L] where L = H * W (and assumed square), so can reshape to [B, H, W] with H = W = sqrt(L)
+        B, L = indices.shape
+        H = W = int(L ** 0.5)
+        assert H * W == L, "Sequence length L must be a perfect square"
+
+        x1 = indices.view(B, H, W)
+        x2 = indices_2.view(B, H, W)
+        x3 = indices_3.view(B, H, W)
+        x4 = indices_4.view(B, H, W)
+        x5 = indices_5.view(B, H, W)
+        x6 = indices_6.view(B, H, W)
+        x7 = indices_7.view(B, H, W)
+
+        assert W % divisor == 0, "Width must be divisible by divisor"
+
+        n_masked_patches = W // divisor
+
+        concat = torch.cat([
+            x1,                   
+            x2[:, :, W - n_masked_patches:],                   
+            x3[:, :, W - n_masked_patches:],
+            x4[:, :, W - n_masked_patches:],                   
+            x5[:, :, W - n_masked_patches:],
+            x6[:, :, W - n_masked_patches:],                   
+            x7[:, :, W - n_masked_patches:],                    
+        ], dim=2)  # concatenate along width
+
+        patch_dimensions = concat.shape[1:]
+
+        concat = concat.view(concat.shape[0], -1)
+
+        reconstructions = self.decode(concat, patch_dimensions=patch_dimensions)
         images = self.visualize(reconstructions)
 
         return images
@@ -227,7 +283,7 @@ def main():
     parser.add_argument("--test_dataset", type = str, help = "path to .pt file of preprocessed images (generated by transformer_preprocessing.py)")
     args = parser.parse_args()
 
-    torch.manual_seed(42)
+    torch.manual_seed(1423)
 
     with open(os.path.join("checkpoints", args.checkpoint_dir, "config.yaml")) as f:
         config = yaml.safe_load(f)
@@ -239,6 +295,7 @@ def main():
     generator = Masked_Generator(config, checkpoint_path)
 
     images = generator.generate(data)
+    # images = generator.generate_2(data)
 
     # Saves image out in ./results with name corresponding the checkpoint used
     out_path = os.path.join("results", f"{args.checkpoint_dir}_{args.checkpoint[:-3]}")
