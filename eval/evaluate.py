@@ -5,8 +5,8 @@ from torchvision.transforms import v2
 import numpy as np
 import lpips
 
-from models.vqvae import VQVAE
-from dataset import STL10Dataset, USGSDataset
+from src.models.vqvae import VQVAE
+from src.dataset import STL10Dataset, USGSDataset
 import argparse
 import yaml
 

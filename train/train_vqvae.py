@@ -7,9 +7,9 @@ from tqdm import tqdm
 import argparse
 import lpips
 
-import utils
-from dataset import STL10Dataset
-from models.vqvae import VQVAE
+import src.utils as utils
+from src.dataset import STL10Dataset
+from src.models.vqvae import VQVAE
 
 class VQVAETrainer:
     def __init__(self, config, out_dir, summary_writer):

@@ -9,14 +9,14 @@ import os
 import numpy as np
 from tqdm import tqdm
 
-from models.transformer import Transformer
-from models.vqvae import Decoder
-from dataset import EncodedImageDataset
+from src.models.transformer import Transformer
+from src.models.vqvae import Decoder
+from src.dataset import EncodedImageDataset
 import argparse
 import yaml
 
-from masking import outpaint_right
-from scheduler import cosine_schedule
+from src.masking import outpaint_right
+from src.scheduler import cosine_schedule
 
 class Masked_Generator():
     def __init__(self, config, checkpoint_path):

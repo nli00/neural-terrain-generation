@@ -7,11 +7,11 @@ from tqdm import tqdm
 import argparse
 import lpips
 
-import utils
-from dataset import STL10Dataset, USGSDataset
-from models.vqvae import VQVAE
-from models.discriminator import Discriminator
-from losses import adopt_generator_weight, calculate_adaptive_weight, bce_loss, hinge_loss
+import src.utils as utils
+from src.dataset import STL10Dataset, USGSDataset
+from src.models.vqvae import VQVAE
+from src.models.discriminator import Discriminator
+from src.losses import adopt_generator_weight, calculate_adaptive_weight, bce_loss, hinge_loss
 
 import torch.nn.functional as F
 

@@ -27,6 +27,11 @@ __pycache__/
 # C extensions
 *.so
 
+# tailwind
+docs/node_modules/
+docs/package-lock.json
+docs/package.json
+
 # Distribution / packaging
 .Python
 build/

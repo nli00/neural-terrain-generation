@@ -1,6 +1,6 @@
 # Test config for training transfomer.
 indices_pt : data/codebook_idx/usgs_d_power_train_geo_idx.pt
-vqgan_path : checkpoints/usgs_d_power
+vqgan_config : checkpoints/usgs_d_power/config.yaml
 vqgan_checkpoint : checkpoints/usgs_d_power/best_98.pt
 
 batch_size : 32

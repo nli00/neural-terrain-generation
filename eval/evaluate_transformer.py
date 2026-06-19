@@ -5,13 +5,13 @@ import os
 import numpy as np
 from tqdm import tqdm
 
-from models.transformer import Transformer
-from dataset import EncodedImageDataset
+from src.models.transformer import Transformer
+from src.dataset import EncodedImageDataset
 import argparse
 import yaml
 
-from scheduler import linear_schedule
-from masking import mask_inputs
+from src.scheduler import linear_schedule
+from src.masking import mask_inputs
 
 class Transformer_Evaluator():
     def __init__(self, config):

@@ -12,12 +12,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-import utils
-from dataset import EncodedImageDataset
-from models.transformer import Transformer
+import src.utils as utils
+from src.dataset import EncodedImageDataset
+from src.models.transformer import Transformer
 
-from scheduler import cosine_schedule
-from masking import mask_inputs
+from src.scheduler import cosine_schedule
+from src.masking import mask_inputs
 
 class TransformerTrainer:
     def __init__(

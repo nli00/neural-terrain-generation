@@ -11,8 +11,8 @@ import yaml
 from torch.utils.data import Dataset
 from torchvision.transforms import v2
 
-from dataset import STL10Dataset, USGSDataset
-from models.vqvae import Encoder, VectorQuantizer
+from src.dataset import STL10Dataset, USGSDataset
+from src.models.vqvae import Encoder, VectorQuantizer
 
 
 def load_data(means, stds, dataset_class: str, dataset_root: str, resolution, batch_size: int = 64):

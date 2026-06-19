@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural and Expandable Neural Terrain Generation with Transformers</title>
+    <link href="output.css" rel="stylesheet">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+    <header class="max-w-4xl mx-auto pt-20 px-6 text-center space-y-4">
+        <h1 class="text-4xl font-extrabold tracking-tight sm:text-5xl text-white">
+            Procedural and Expandable Neural Terrain Generation with Transformers
+        </h1>
+        <p class="text-xl font-medium text-indigo-400">
+            A Pytorch implementation of a MaskGIT-based pipeline to generate infinitely expandable procedural terrain based on real-world geographical data
+        </p>
+        
+        <div class="pt-4 text-sm text-slate-400 font-mono">
+            <p class="font-bold text-slate-200">Nathaniel Li</p>
+            <p class="text-xs mt-1 text-slate-500">Project Status: Active Research Pipeline</p>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto mt-16 px-6 space-y-16 pb-32">
+        
+        <section class="bg-slate-800/50 border-l-4 border-indigo-500 p-6 rounded-r-xl shadow-inner backdrop-blur-sm">
+            <h3 class="text-xs font-bold tracking-widest text-indigo-400 uppercase font-mono mb-2">Abstract</h3>
+            <p class="text-slate-300 italic leading-relaxed text-sm">
+                Existing approaches to procedural generation of terrain fail to account for the diversity of geology and topography evident in the real world, or fail to do it scalably.
+            </p>
+            <div class="text-slate-300 italic leading-relaxed text-sm">
+                <ul class="list-disc pl-6 space-y-2">
+                    <li>
+                        Noise-based approaches have no physical basis and require careful tuning of parameters to produce convincing results. Furthermore, they suffer from artifacting and repetitiveness.
+                    </li>
+                    <li>
+                        Erosion-based approaches produce great quality for one region of terrain, but the produced terrain cannot be expanded easily and the process usually cannot be done online.
+                    </li>
+                    <li>
+                        GANs also do not scale well with increased map size. Also, they have no sense of long-range relations, which are important in real terrain (ie. rivers ending in the sea or mountains sloping off into plains).
+                    </li>
+                </ul>
+            </div>
+            <p class="text-slate-300 italic leading-relaxed text-sm">
+                By leveraging a transformer trained on the abstract space of a VQGAN, this model aims to produce topologically and geologically coherent height maps with meaningful long-range relations and infinite extensibility.
+            </p>
+            <p class="text-slate-300 italic leading-relaxed text-sm">
+                Describe current roadblock and plan
+            </p>
+        </section>
+        <section class="space-y-4">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">1. Introduction & Objectives</h2>
+            <p class="text-slate-300 leading-relaxed">
+                Define the problem state of digital elevation map (DEM) generation. Explain why I chose this architecture for terrain outpainting. Frame the scope of this project as building a continuous, boundless terrain canvas rather than isolated patches, referencing the real-world applications like game asset rendering
+            </p>
+        </section>
+
+        <section class="space-y-6">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">2. Architecture & Methodology</h2>
+            <p class="text-slate-300 leading-relaxed">
+                Give a high-level walkthrough of how pipeline passes data.
+            </p>
+        </section>
+
+        <section class="space-y-4">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">3. Dataset Engineering</h2>
+            <p class="text-slate-300 leading-relaxed">
+                Explain USGS data curation. Specify map scale (e.g., crop sizes, meters-per-pixel resolution). discuss global or local mean/std normalization strategy
+            </p>
+        </section>
+
+        <section class="space-y-8">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">4. Experimental Results</h2>
+            
+            <div class="space-y-4">
+                <h3 class="text-lg font-semibold text-indigo-400">4.1 VQ-GAN Reconstruction & Adversarial Balancing</h3>
+                <p class="text-slate-300 text-sm">
+                    Explain how I optimized the reconstruction phase. Document  custom loss weighting configuration that balances the discriminator  against the generator. Note shortcomings, such as low codebook utilization, and how to address it.
+                </p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-4">
+                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+                        <div class="w-full h-48 bg-slate-700/50 flex items-center justify-center rounded text-xs text-slate-400 italic">[IMAGE: Ground Truth DEM Crop]</div>
+                        <span class="block text-xs font-mono text-slate-400 mt-2">Ground Truth Target</span>
+                    </div>
+                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+                        <div class="w-full h-48 bg-slate-700/50 flex items-center justify-center rounded text-xs text-slate-400 italic">[IMAGE: VQ-GAN Reconstructed Output]</div>
+                        <span class="block text-xs font-mono text-slate-400 mt-2">VQ-GAN Neural Reconstruction</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4 pt-4">
+                <h3 class="text-lg font-semibold text-indigo-400">4.2 Single-Step Spatial Outpainting</h3>
+                <p class="text-slate-300 text-sm">
+                    Present model's strong point. Show how, when given a strict seed mask (e.g., 50% split), the transformer accurately and plausibly bridges geological structure across the horizon boundary, successfully extending elements like riverbeds or ridges
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
+                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+                        <div class="w-full h-32 bg-slate-700/50 flex items-center justify-center rounded text-xs text-slate-400 italic">[IMAGE: Input Seed Half]</div>
+                        <span class="block text-xs font-mono text-slate-400 mt-2">Context Seed</span>
+                    </div>
+                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+                        <div class="w-full h-32 bg-slate-700/50 flex items-center justify-center rounded text-xs text-slate-400 italic">[IMAGE: Predicted Extrapolation]</div>
+                        <span class="block text-xs font-mono text-slate-400 mt-2">Generated Extrapolation</span>
+                    </div>
+                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+                        <div class="w-full h-32 bg-slate-700/50 flex items-center justify-center rounded text-xs text-slate-400 italic">[IMAGE: Combined Decoded Stitched Canvas]</div>
+                        <span class="block text-xs font-mono text-slate-400 mt-2">Final Stitched Result</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-6 bg-slate-950 p-6 rounded-xl border border-slate-800">
+            <h2 class="text-2xl font-bold text-rose-400 border-b border-slate-900 pb-2">5. Diagnostic Analysis: Failure Modes in Multi-Step Loops</h2>
+            <p class="text-slate-400 text-sm leading-relaxed">
+                Explain that while single-step outpainting is effective, infinite iterative loops trigger compounding error propagation
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-2">
+                    <h4 class="text-md font-bold text-slate-200">A. Global Interpretation Bias (Rippling)</h4>
+                    <p class="text-slate-400 text-xs leading-relaxed">
+                        Show the high-contrast repeating edge artifact problem. Transformer isolates contrast transitions at the border boundaries of individual windows and repeatedly clones them into downstream steps, generating synthetic mountain ripples
+                    </p>
+                </div>
+                <div class="space-y-2">
+                    <h4 class="text-md font-bold text-slate-200">B. Entropy Collapse (Flat Void Bias)</h4>
+                    <p class="text-slate-400 text-xs leading-relaxed">
+                        Loss of topographical variation. Executing generation at temperature zero (greedy/argmax) strips organic variance from the model, forcing it to default to the safest prediction (an endlessly flat gray canvas)
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-4">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">6. Technical Roadmap & Future Milestones</h2>
+            <p class="text-slate-300 leading-relaxed">
+                Outline upcoming milestones and plans to address problems with codebook, multi step generation, multi step decoding, etc
+            </p>
+            <ul class="space-y-2 text-sm font-mono text-indigo-300 pl-4">
+                <li><span class="text-slate-300">More data</span></li>
+                <li><span class="text-slate-300">Implement temperature.</span></li>
+                <li><span class="text-slate-300">Codebook collapse strategies</span></li>
+            </ul>
+        </section>
+
+        <section class="space-y-4">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">7. Datasets</h2>
+            <ul class="space-y-2 text-sm font-mono text-indigo-300 pl-4">
+                <li><span class="text-slate-300">https://cs.stanford.edu/~acoates/stl10/</span></li>
+                <li><span class="text-slate-300">https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e</span></li>
+                <li><span class="text-slate-300">https://www.cec.org/files/atlas/?z=4&x=-93.3838&y=43.1651&lang=en&layers=climatezones&opacities=100&labels=true</span></li>
+            </ul>
+        </section>
+
+        <section class="space-y-4">
+            <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-2">8. References</h2>
+            <ul class="space-y-2 text-sm font-mono text-indigo-300 pl-4">
+                <li><span class="text-slate-300">[1] H. Chang, H. Zhang, L. Jiang, C. Liu, and W. T. Freeman, ‘MaskGIT: Masked Generative Image Transformer’, arXiv [cs.CV]. 2022.</span></li>
+                <li><span class="text-slate-300">[2] P. Esser, R. Rombach, and B. Ommer, ‘Taming Transformers for High-Resolution Image Synthesis’, arXiv [cs.CV]. 2021.</span></li>
+                <li><span class="text-slate-300">[3] A. van den Oord, O. Vinyals, and K. Kavukcuoglu, ‘Neural Discrete Representation Learning’, arXiv [cs.LG]. 2018.</span></li>
+            </ul>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-950 text-center py-8 text-xs text-slate-500 border-t border-slate-900">
+        <p>Built with Tailwind CSS. Core Engine Repository: <a href="#" class="text-indigo-400 hover:underline">GitHub Workspace</a></p>
+    </footer>
+
+</body>
+</html>
