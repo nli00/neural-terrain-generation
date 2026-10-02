@@ -298,7 +298,7 @@ def main():
     # images = generator.generate_2(data)
 
     # Saves image out in ./results with name corresponding the checkpoint used
-    out_path = os.path.join("results", f"{args.checkpoint_dir}_{args.checkpoint[:-3]}")
+    out_path = os.path.join("results", f"{args.checkpoint_dir}_{args.checkpoint[:-3]}_testtesttest")
     os.mkdir(out_path)
 
     save_image(
